@@ -1,0 +1,1189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hash Music Live Demo</title>
+<!--
+  Live demo page for the Hash Music Generator (Bubble Sort Bandits, CSC 2710).
+  Open it in any modern browser; it needs no internet connection and no build.
+  The JavaScript below is a line-by-line port of src/sha256.cpp, src/mapper.cpp, src/band.cpp,
+  src/midi_writer.cpp, src/avalanche.cpp and src/stats.cpp. On load it checks itself against NIST's
+  SHA-256 vectors and against the fingerprints of the C++ build's demo songs, so the songs here are
+  byte-for-byte the files `hashmusic` writes. Playback uses a small built-in synthesizer; the
+  downloaded .mid files use the real General MIDI instruments.
+-->
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s5: #e87ba4; --s7: #6250d6;
+  --good: #006300; --bad: #d03b3b; --on-accent: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s5: #d55181; --s7: #9085e9;
+    --good: #0ca30c; --bad: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s5: #d55181; --s7: #9085e9;
+  --good: #0ca30c; --bad: #e66767;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--page); color: var(--ink);
+       font: 17px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 64px; }
+h1 { font-size: 28px; line-height: 1.2; margin: 0; font-weight: 650; }
+h2 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
+p { margin: 0 0 10px; }
+code, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.sub { color: var(--ink-2); font-size: 15px; }
+.muted { color: var(--muted); }
+header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.badge { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; padding: 6px 12px; border-radius: 999px;
+         border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); }
+.badge .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.badge.ok .dot { background: var(--good); }
+.badge.fail .dot { background: var(--bad); }
+
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--grid); margin-bottom: 16px; }
+.tab { appearance: none; border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 16px;
+       padding: 10px 14px; border-bottom: 3px solid transparent; cursor: pointer; margin-bottom: -1px; }
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--s1); font-weight: 600; }
+.tab .num { color: var(--muted); margin-right: 6px; font-variant-numeric: tabular-nums; }
+.panel[hidden] { display: none; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 14px; min-width: 0; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.grow { flex: 1 1 260px; min-width: 0; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+
+input[type="text"], input[type="number"] {
+  font: inherit; font-size: 22px; padding: 10px 14px; border-radius: 10px; width: 100%;
+  border: 1px solid var(--axis); background: var(--page); color: var(--ink); min-width: 0; }
+input[type="number"] { font-size: 17px; width: 140px; }
+input:focus-visible, button:focus-visible, .drop:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+label.check { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; color: var(--ink-2); }
+label.check input { width: 18px; height: 18px; accent-color: var(--s1); }
+.btn { appearance: none; font: inherit; font-size: 16px; padding: 9px 16px; border-radius: 10px; cursor: pointer;
+       border: 1px solid var(--axis); background: var(--surface); color: var(--ink); white-space: nowrap; }
+.btn:hover { background: var(--grid); }
+.btn.primary { background: var(--s1); border-color: var(--s1); color: var(--on-accent); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: .5; cursor: default; }
+.seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 10px; overflow: hidden; }
+.seg button { appearance: none; border: 0; background: none; font: inherit; font-size: 15px; padding: 7px 14px; color: var(--ink-2); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--s1); color: var(--on-accent); }
+.drop { border: 2px dashed var(--axis); border-radius: 12px; padding: 18px; text-align: center; color: var(--ink-2); cursor: pointer; }
+.drop.over { border-color: var(--s1); background: color-mix(in srgb, var(--s1) 8%, transparent); }
+progress { width: 100%; height: 8px; accent-color: var(--s1); }
+
+/* Hash, byte by byte */
+.hash { display: flex; flex-wrap: wrap; gap: 4px; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 20px; }
+.byte { display: inline-flex; border-radius: 6px; overflow: hidden; border-bottom: 3px solid var(--muted); }
+.byte span { padding: 2px 3px; }
+.byte.melody .hi { background: color-mix(in srgb, var(--s1) 22%, transparent); }
+.byte.melody .lo { background: color-mix(in srgb, var(--s2) 22%, transparent); }
+.byte.melody { border-bottom-color: transparent; }
+.byte.tempo { border-bottom-color: var(--s3); background: color-mix(in srgb, var(--s3) 14%, transparent); }
+.byte.loud { border-bottom-color: var(--s7); background: color-mix(in srgb, var(--s7) 14%, transparent); }
+.byte.band { border-bottom-color: var(--s5); background: color-mix(in srgb, var(--s5) 14%, transparent); }
+.byte.spare { color: var(--muted); }
+.byte.now { outline: 2px solid var(--ink); outline-offset: 1px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--ink-2); margin-top: 10px; }
+.legend i { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.tile { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--page); min-width: 0; }
+.tile .label { font-size: 13px; color: var(--ink-2); }
+.tile .value { font-size: 26px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.tile .note { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+
+/* Notes */
+.notes { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
+.notecell { border: 1px solid var(--border); border-radius: 8px; padding: 6px 4px; text-align: center; background: var(--page); min-width: 0; }
+.notecell .nb { font-family: ui-monospace, Consolas, monospace; font-size: 15px; }
+.notecell .nb .hi { background: color-mix(in srgb, var(--s1) 22%, transparent); border-radius: 3px; padding: 0 2px; }
+.notecell .nb .lo { background: color-mix(in srgb, var(--s2) 22%, transparent); border-radius: 3px; padding: 0 2px; }
+.notecell .nn { display: block; font-size: 20px; font-weight: 600; }
+.notecell .nr { display: block; font-size: 12px; color: var(--ink-2); }
+.notecell.now { border-color: var(--s1); box-shadow: 0 0 0 2px var(--s1) inset; }
+.notecell.same { border-color: var(--s3); box-shadow: 0 0 0 2px var(--s3) inset; }
+@media (max-width: 620px) { .notes { grid-template-columns: repeat(4, minmax(0, 1fr)); } .hash { font-size: 16px; } }
+
+svg { display: block; width: 100%; height: auto; }
+.roll-bg { fill: var(--page); }
+.roll-grid { stroke: var(--grid); stroke-width: 1; }
+.roll-bar { stroke: var(--axis); stroke-width: 1; }
+.playhead { stroke: var(--ink); stroke-width: 2; }
+.axis-label { fill: var(--muted); font-size: 12px; }
+
+table { border-collapse: collapse; font-size: 15px; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--ink-2); font-weight: 600; font-size: 14px; }
+td.mono { font-size: 14px; overflow-wrap: anywhere; }
+.match { color: var(--good); font-weight: 600; }
+.table-wrap { overflow-x: auto; }
+
+/* Avalanche */
+.hexline { font-family: ui-monospace, Consolas, monospace; font-size: 18px; overflow-wrap: anywhere; letter-spacing: .02em; }
+.hexline .d { background: color-mix(in srgb, var(--s2) 28%, transparent); border-radius: 2px; }
+.bits { display: grid; grid-template-columns: repeat(32, minmax(0, 1fr)); gap: 2px; max-width: 760px; }
+.bit { aspect-ratio: 1; border-radius: 2px; background: var(--grid); }
+.bit.flip { background: var(--s2); }
+.bit.gap { margin-left: 4px; }
+.big { font-size: 44px; font-weight: 650; line-height: 1.1; }
+.vs { display: grid; grid-template-columns: 2.2em repeat(8, minmax(0, 1fr)); gap: 4px; font-size: 15px; align-items: center; }
+.vs .h { color: var(--muted); font-size: 12px; text-align: center; }
+.vs .c { text-align: center; border-radius: 6px; padding: 4px 0; background: var(--page); border: 1px solid var(--border); }
+.vs .c.same { border-color: var(--s3); box-shadow: 0 0 0 1px var(--s3) inset; }
+.vs .who { font-weight: 600; color: var(--ink-2); }
+
+/* Inside SHA-256 */
+.block { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 2px; font-family: ui-monospace, Consolas, monospace; font-size: 13px; margin-bottom: 8px; max-width: 760px; }
+.block span { text-align: center; border-radius: 3px; padding: 2px 0; }
+.b-msg { background: color-mix(in srgb, var(--s1) 20%, transparent); }
+.b-one { background: color-mix(in srgb, var(--s2) 35%, transparent); }
+.b-zero { background: var(--grid); color: var(--muted); }
+.b-len { background: color-mix(in srgb, var(--s3) 30%, transparent); }
+.words { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; font-family: ui-monospace, Consolas, monospace; font-size: 14px; }
+.words div { border: 1px solid var(--border); border-radius: 6px; padding: 4px; text-align: center; background: var(--page); overflow-wrap: anywhere; }
+.words div b { display: block; font-family: system-ui, sans-serif; font-size: 12px; color: var(--muted); font-weight: 600; }
+.words div.changed { border-color: var(--s2); box-shadow: 0 0 0 1px var(--s2) inset; }
+.sched { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.sched span { text-align: center; padding: 2px 0; border-radius: 3px; background: var(--page); border: 1px solid var(--border); }
+.sched span.fromblock { background: color-mix(in srgb, var(--s1) 16%, transparent); }
+.sched span.cur { border-color: var(--s2); box-shadow: 0 0 0 1px var(--s2) inset; }
+input[type="range"] { width: 100%; accent-color: var(--s1); }
+@media (max-width: 620px) { .words { grid-template-columns: repeat(4, minmax(0, 1fr)); } .sched { grid-template-columns: repeat(4, minmax(0, 1fr)); } .block { font-size: 10px; } }
+
+/* Charts */
+.grid-line { stroke: var(--grid); stroke-width: 1; }
+.baseline { stroke: var(--axis); stroke-width: 1; }
+.tick { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.xlabel { fill: var(--ink-2); font-size: 12px; }
+.xsub { fill: var(--muted); font-size: 11px; font-family: ui-monospace, Consolas, monospace; }
+.bar { fill: var(--s1); }
+.band-area { fill: var(--s1); fill-opacity: 0.10; }
+.expected { stroke: var(--ink-2); stroke-width: 1; }
+.expected-label { fill: var(--ink-2); font-size: 12px; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; }
+.grid-line, .baseline, .band-area, .expected, .expected-label, .tick, .xlabel, .xsub { pointer-events: none; }
+.hit { fill: transparent; }
+.col:hover .bar, .col:focus-within .bar { filter: brightness(1.18); }
+.hit:focus { outline: none; }
+.hit:focus-visible { stroke: var(--ink); stroke-width: 1.5; }
+.tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink);
+       border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+.tip[hidden] { display: none; }
+.tip b { display: block; font-variant-numeric: tabular-nums; }
+.tip span { color: var(--ink-2); }
+details summary { cursor: pointer; color: var(--ink-2); font-size: 14px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Hash Music Generator</h1>
+      <div class="sub">Bubble Sort Bandits &middot; CSC 2710 &middot; hear SHA-256, written from scratch</div>
+    </div>
+    <div class="badge" id="selftest" role="status"><span class="dot"></span><span>Running self-test&hellip;</span></div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Demo sections">
+    <button class="tab" role="tab" id="tab-song" aria-controls="panel-song" aria-selected="true"><span class="num">1</span>Your song</button>
+    <button class="tab" role="tab" id="tab-aval" aria-controls="panel-aval" aria-selected="false"><span class="num">2</span>Avalanche</button>
+    <button class="tab" role="tab" id="tab-inside" aria-controls="panel-inside" aria-selected="false"><span class="num">3</span>Inside SHA-256</button>
+    <button class="tab" role="tab" id="tab-dist" aria-controls="panel-dist" aria-selected="false"><span class="num">4</span>Distribution</button>
+  </nav>
+
+  <!-- 1. Your song -->
+  <section class="panel" id="panel-song" role="tabpanel" aria-labelledby="tab-song">
+    <div class="card">
+      <div class="row" style="justify-content: space-between; margin-bottom: 10px">
+        <div class="seg" role="group" aria-label="Input source">
+          <button id="src-text" aria-pressed="true">Text</button>
+          <button id="src-file" aria-pressed="false">File (theme song)</button>
+        </div>
+        <label class="check"><input type="checkbox" id="band"> Band: instruments, chords, bass and drums (bytes 26&ndash;29)</label>
+      </div>
+      <div id="text-source">
+        <input type="text" id="text" value="jacob" autocomplete="off" spellcheck="false" aria-label="Text to hash" placeholder="Type anything, then press Enter to play">
+      </div>
+      <div id="file-source" hidden>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a file to hash">
+          Drop any file here, or click to choose one. Every file gets its own theme song.
+          <div id="file-info" class="muted" style="margin-top:6px"></div>
+          <progress id="file-progress" value="0" max="1" hidden></progress>
+        </div>
+        <input type="file" id="file" hidden>
+      </div>
+      <div class="row" style="margin-top: 12px">
+        <button class="btn primary" id="play">&#9654; Play</button>
+        <button class="btn" id="stop">&#9632; Stop</button>
+        <button class="btn" id="download">Download .mid</button>
+        <span class="muted" id="song-meta"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>SHA-256 of the input</h2>
+      <div class="hash" id="hash" aria-label="Digest bytes"></div>
+      <div class="legend">
+        <span><i style="background:color-mix(in srgb,var(--s1) 40%,transparent)"></i>first digit: pitch</span>
+        <span><i style="background:color-mix(in srgb,var(--s2) 40%,transparent)"></i>second digit: rhythm</span>
+        <span><i style="background:var(--s3)"></i>byte 24: tempo</span>
+        <span><i style="background:var(--s7)"></i>byte 25: loudness</span>
+        <span><i style="background:var(--s5)"></i>bytes 26&ndash;29: band</span>
+        <span><i style="background:var(--grid)"></i>bytes 30&ndash;31: spare</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tiles" id="song-tiles"></div>
+    </div>
+
+    <div class="card">
+      <h2>The melody, read off the hash</h2>
+      <p class="sub">24 notes from bytes 0&ndash;23, then the home note C5. Pentatonic pitches G3&ndash;G6; any order sounds consonant.</p>
+      <div class="notes" id="notes"></div>
+      <div style="margin-top: 12px" id="roll"></div>
+      <div class="legend" id="roll-legend"></div>
+      <div id="band-info" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Determinism check</h2>
+      <p class="sub">Every song you play is listed with the SHA-256 of its .mid file. Play the same input twice: identical fingerprint, byte for byte.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Input</th><th>Mode</th><th>File fingerprint</th><th></th></tr></thead>
+        <tbody id="history"><tr><td colspan="5" class="muted">Nothing played yet.</td></tr></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- 2. Avalanche -->
+  <section class="panel" id="panel-aval" role="tabpanel" aria-labelledby="tab-aval" hidden>
+    <div class="card">
+      <div class="cols">
+        <label>A <input type="text" id="aval-a" value="jacob" autocomplete="off" spellcheck="false"></label>
+        <label>B <input type="text" id="aval-b" value="jacob1" autocomplete="off" spellcheck="false"></label>
+      </div>
+      <div class="row" style="margin-top: 12px">
+        <button class="btn primary" id="aval-play">&#9654; Play A, then B</button>
+        <button class="btn" id="aval-play-a">Play A</button>
+        <button class="btn" id="aval-play-b">Play B</button>
+        <button class="btn" id="aval-stop">&#9632; Stop</button>
+        <span class="muted" id="aval-edit"></span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="tiles" id="aval-tiles"></div>
+    </div>
+    <div class="card">
+      <h2>The two digests</h2>
+      <p class="sub">Highlighted hex digits differ.</p>
+      <div class="hexline"><span class="muted">A </span><span id="aval-hex-a"></span></div>
+      <div class="hexline"><span class="muted">B </span><span id="aval-hex-b"></span></div>
+    </div>
+    <div class="card">
+      <h2>Which of the 256 bits flipped</h2>
+      <p class="sub">Each square is one bit of the digest, 32 per row. Orange = flipped. An ideal hash flips each bit with probability one half, scattered everywhere.</p>
+      <div class="bits" id="aval-bits" role="img"></div>
+    </div>
+    <div class="card">
+      <h2>The two melodies</h2>
+      <p class="sub">Green outline = same pitch in both songs. Chance alone gives about 1.5 of 24.</p>
+      <div id="aval-vs"></div>
+    </div>
+  </section>
+
+  <!-- 3. Inside SHA-256 -->
+  <section class="panel" id="panel-inside" role="tabpanel" aria-labelledby="tab-inside" hidden>
+    <div class="card">
+      <input type="text" id="inside-text" autocomplete="off" spellcheck="false" aria-label="Text to look inside">
+      <p class="sub" style="margin-top:8px" id="inside-summary"></p>
+    </div>
+    <div class="card">
+      <h2>Step 1: padding</h2>
+      <p class="sub">The message is padded to whole 64-byte blocks: a 1 bit (0x80), zeros, then the message length in bits as a 64-bit number.</p>
+      <div id="inside-blocks"></div>
+      <div class="legend">
+        <span><i class="b-msg"></i>message bytes (UTF-8)</span><span><i class="b-one"></i>0x80: the 1 bit</span>
+        <span><i class="b-zero"></i>zero padding</span><span><i class="b-len"></i>length in bits</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content: space-between">
+        <h2>Steps 2 and 3: message schedule and the 64 rounds</h2>
+        <label id="inside-block-pick-wrap">Block <select id="inside-block-pick" class="btn" style="padding:4px 8px"></select></label>
+      </div>
+      <p class="sub">Drag through the rounds. Each round mixes one schedule word W[t] and one constant K[t] into the eight working variables, then shifts them along by one place.</p>
+      <input type="range" id="round" min="0" max="64" value="0" aria-label="Round">
+      <p id="round-label" style="margin-top:4px"></p>
+      <div class="words" id="round-words"></div>
+      <h2 style="margin-top:14px; font-size:16px">Message schedule W[0..63]</h2>
+      <p class="sub">The first 16 words (shaded) are the block itself; the other 48 are mixed from earlier words.</p>
+      <div class="sched" id="sched"></div>
+    </div>
+  </section>
+
+  <!-- 4. Distribution -->
+  <section class="panel" id="panel-dist" role="tabpanel" aria-labelledby="tab-dist" hidden>
+    <div class="card">
+      <p>Hash many random inputs (lowercase strings of 8&ndash;24 letters) and count how often each pitch and byte value appears. A uniform hash makes every column level.</p>
+      <div class="row">
+        <label>Inputs <input type="number" id="dist-count" value="10000" min="100" max="200000" step="100"></label>
+        <label>Seed <input type="number" id="dist-seed" value="2710" min="0" step="1"></label>
+        <button class="btn primary" id="dist-run">Run</button>
+        <div class="grow"><progress id="dist-progress" value="0" max="1" hidden></progress></div>
+      </div>
+      <p class="muted" style="margin-top:8px; font-size:14px">Same random generator as <code>hashmusic --stats</code> (std::mt19937_64), so the same seed gives the same counts as the C++ tool.</p>
+    </div>
+    <div id="dist-out"></div>
+  </section>
+</main>
+<div class="tip" id="tip" hidden><b></b><span></span></div>
+
+<script>
+'use strict';
+// ============================================================================================
+// SHA-256 (port of src/sha256.cpp, FIPS 180-4)
+// ============================================================================================
+const K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]);
+const H0 = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+const rotr = (x, n) => ((x >>> n) | (x << (32 - n))) >>> 0;
+
+// One 64-byte block. If `trace` is given, records W and the working variables after every round.
+function compress(state, bytes, offset, w, trace) {
+  for (let t = 0; t < 16; t++) {
+    const p = offset + 4 * t;
+    w[t] = ((bytes[p] << 24) | (bytes[p + 1] << 16) | (bytes[p + 2] << 8) | bytes[p + 3]) >>> 0;
+  }
+  for (let t = 16; t < 64; t++) {
+    const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);
+    const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);
+    w[t] = (s1 + w[t - 7] + s0 + w[t - 16]) >>> 0;
+  }
+  let [a, b, c, d, e, f, g, h] = state;
+  if (trace) { trace.w = Array.from(w); trace.rounds = [[a, b, c, d, e, f, g, h]]; trace.start = Array.from(state); }
+  for (let t = 0; t < 64; t++) {
+    const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+    const ch = (e & f) ^ (~e & g);
+    const t1 = (h + S1 + ch + K[t] + w[t]) >>> 0;
+    const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+    const maj = (a & b) ^ (a & c) ^ (b & c);
+    const t2 = (S0 + maj) >>> 0;
+    h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    if (trace) trace.rounds.push([a, b, c, d, e, f, g, h]);
+  }
+  state[0] = (state[0] + a) >>> 0; state[1] = (state[1] + b) >>> 0; state[2] = (state[2] + c) >>> 0; state[3] = (state[3] + d) >>> 0;
+  state[4] = (state[4] + e) >>> 0; state[5] = (state[5] + f) >>> 0; state[6] = (state[6] + g) >>> 0; state[7] = (state[7] + h) >>> 0;
+}
+
+class Sha256 {
+  constructor() { this.state = H0.slice(); this.buffer = new Uint8Array(64); this.buffered = 0; this.total = 0; this.w = new Uint32Array(64); }
+  update(data) {
+    let i = 0;
+    this.total += data.length;
+    if (this.buffered > 0) {
+      const take = Math.min(64 - this.buffered, data.length);
+      this.buffer.set(data.subarray(0, take), this.buffered);
+      this.buffered += take; i = take;
+      if (this.buffered === 64) { compress(this.state, this.buffer, 0, this.w); this.buffered = 0; }
+    }
+    for (; i + 64 <= data.length; i += 64) compress(this.state, data, i, this.w);
+    if (i < data.length) { this.buffer.set(data.subarray(i), 0); this.buffered = data.length - i; }
+  }
+  finish() {
+    const bits = this.total * 8;
+    const padBytes = this.buffered < 56 ? 56 - this.buffered : 120 - this.buffered;
+    const tail = new Uint8Array(padBytes + 8);
+    tail[0] = 0x80;
+    const hi = Math.floor(bits / 4294967296), lo = bits % 4294967296;
+    for (let i = 0; i < 4; i++) { tail[padBytes + i] = (hi >>> (24 - 8 * i)) & 255; tail[padBytes + 4 + i] = (lo >>> (24 - 8 * i)) & 255; }
+    const total = this.total;
+    this.update(tail);
+    this.total = total;
+    const out = new Uint8Array(32);
+    for (let i = 0; i < 8; i++) { out[4 * i] = this.state[i] >>> 24; out[4 * i + 1] = (this.state[i] >>> 16) & 255; out[4 * i + 2] = (this.state[i] >>> 8) & 255; out[4 * i + 3] = this.state[i] & 255; }
+    return out;
+  }
+}
+const utf8 = (text) => new TextEncoder().encode(text);
+function sha256(bytes) { const h = new Sha256(); h.update(bytes); return h.finish(); }
+const hex2 = (b) => b.toString(16).padStart(2, '0');
+const toHex = (bytes) => Array.from(bytes, hex2).join('');
+const hex8 = (x) => (x >>> 0).toString(16).padStart(8, '0');
+
+// The padded message, so the "Inside" tab can show it.
+function padMessage(bytes) {
+  const n = bytes.length;
+  const padded = new Uint8Array(Math.ceil((n + 9) / 64) * 64);
+  padded.set(bytes); padded[n] = 0x80;
+  const bits = n * 8, hi = Math.floor(bits / 4294967296), lo = bits % 4294967296, L = padded.length;
+  for (let i = 0; i < 4; i++) { padded[L - 8 + i] = (hi >>> (24 - 8 * i)) & 255; padded[L - 4 + i] = (lo >>> (24 - 8 * i)) & 255; }
+  return padded;
+}
+
+// ============================================================================================
+// Mapper (port of src/mapper.cpp)
+// ============================================================================================
+const TPB = 480, BAR = 1920, DRUM_CH = 9;
+const PITCHES = [55, 57, 60, 62, 64, 67, 69, 72, 74, 76, 79, 81, 84, 86, 88, 91];
+const RHYTHMS = [240, 240, 240, 240, 240, 240, 480, 480, 480, 480, 480, 480, 720, 720, 960, 960];
+const RHYTHM_NAMES = { 240: 'eighth', 480: 'quarter', 720: 'dotted quarter', 960: 'half' };
+const RHYTHM_SYMBOLS = { 240: 'e', 480: 'q', 720: 'q.', 960: 'h' };
+const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const noteName = (p) => NAMES[p % 12] + (Math.floor(p / 12) - 1);
+const tempoFromByte = (b) => 80 + Math.floor(b * 80 / 255);
+const baseVelocity = (b) => 60 + Math.floor(b * 40 / 255);
+const clampVel = (v) => Math.max(1, Math.min(127, v));
+function accent(tick) { const p = tick % BAR; return p === 0 ? 12 : p === 2 * TPB ? 6 : p % TPB === 0 ? 0 : -8; }
+
+function mapDigest(d) {
+  const base = baseVelocity(d[25]);
+  const melody = { name: 'Melody', channel: 0, program: 0, notes: [] };
+  let tick = 0;
+  for (let i = 0; i < 24; i++) {
+    const slot = RHYTHMS[d[i] & 15];
+    melody.notes.push({ start: tick, duration: slot - Math.floor(slot / 10), pitch: PITCHES[d[i] >> 4], velocity: clampVel(base + accent(tick)) });
+    tick += slot;
+  }
+  const end = Math.floor((tick + 2 * TPB + BAR - 1) / BAR) * BAR;
+  melody.notes.push({ start: tick, duration: end - tick, pitch: 72, velocity: clampVel(base + 6) });
+  return { title: 'Hash Music ' + toHex(d).slice(0, 8), bpm: tempoFromByte(d[24]), length: end + TPB, tracks: [melody] };
+}
+
+// ============================================================================================
+// Band (port of src/band.cpp)
+// ============================================================================================
+const MELODY_INSTRUMENTS = [[0, 'Acoustic Grand Piano'], [4, 'Electric Piano'], [8, 'Celesta'], [9, 'Glockenspiel'], [10, 'Music Box'], [11, 'Vibraphone'], [12, 'Marimba'], [13, 'Xylophone'], [24, 'Nylon Guitar'], [46, 'Harp'], [73, 'Flute'], [75, 'Pan Flute'], [79, 'Ocarina'], [80, 'Square Lead'], [108, 'Kalimba'], [114, 'Steel Drums']];
+const HARMONY_INSTRUMENTS = [[48, 'Strings'], [49, 'Slow Strings'], [52, 'Choir'], [88, 'New Age Pad'], [89, 'Warm Pad'], [16, 'Drawbar Organ'], [5, 'Electric Piano 2'], [6, 'Harpsichord'], [25, 'Steel Guitar'], [27, 'Clean Electric Guitar'], [46, 'Harp'], [61, 'Brass Section'], [71, 'Clarinet'], [68, 'Oboe'], [90, 'Polysynth Pad'], [92, 'Bowed Pad']];
+const BASS_INSTRUMENTS = [[32, 'Acoustic Bass'], [33, 'Finger Bass'], [34, 'Pick Bass'], [35, 'Fretless Bass'], [36, 'Slap Bass'], [38, 'Synth Bass 1'], [39, 'Synth Bass 2'], [43, 'Contrabass']];
+const CHORDS = [[0, false, 'I'], [2, true, 'ii'], [4, true, 'iii'], [5, false, 'IV'], [7, false, 'V'], [9, true, 'vi']];
+const PROGRESSIONS = [[0, 4, 5, 3], [5, 3, 0, 4], [0, 5, 3, 4], [0, 3, 4, 3], [0, 3, 5, 4], [1, 4, 0, 5], [0, 2, 3, 4], [5, 4, 3, 4],
+                      [0, 4, 3, 0], [3, 0, 4, 5], [0, 1, 3, 4], [5, 1, 4, 0], [0, 3, 0, 4], [3, 4, 2, 5], [0, 5, 1, 4], [0, 4, 5, 2]];
+const ROOT = 0, THIRD = 1, FIFTH = 2, OCTAVE = 3, TRIAD = 4;
+const BASS_PATTERNS = [
+  ['whole notes', [[0, 16, ROOT]]],
+  ['half notes', [[0, 8, ROOT], [8, 8, FIFTH]]],
+  ['steady quarters', [[0, 4, ROOT], [4, 4, ROOT], [8, 4, ROOT], [12, 4, ROOT]]],
+  ['root-fifth-octave', [[0, 4, ROOT], [4, 4, FIFTH], [8, 4, OCTAVE], [12, 4, FIFTH]]],
+  ['push', [[0, 6, ROOT], [6, 2, ROOT], [8, 8, FIFTH]]],
+  ['eighth-note pulse', [0, 2, 4, 6, 8, 10, 12, 14].map((s) => [s, 2, ROOT])],
+  ['syncopated', [[0, 3, ROOT], [3, 3, ROOT], [6, 2, FIFTH], [8, 4, ROOT], [12, 4, OCTAVE]]],
+  ['walking', [[0, 4, ROOT], [4, 4, THIRD], [8, 4, FIFTH], [12, 4, THIRD]]]];
+const HARMONY_PATTERNS = [
+  ['sustained pad', [[0, 16, TRIAD]]],
+  ['half-note chords', [[0, 8, TRIAD], [8, 8, TRIAD]]],
+  ['rising arpeggio', [[0, 4, ROOT], [4, 4, THIRD], [8, 4, FIFTH], [12, 4, OCTAVE]]],
+  ['up-and-down arpeggio', [ROOT, THIRD, FIFTH, OCTAVE, FIFTH, THIRD, ROOT, THIRD].map((t, i) => [2 * i, 2, t])],
+  ['broken chord', [ROOT, FIFTH, THIRD, FIFTH, ROOT, FIFTH, THIRD, FIFTH].map((t, i) => [2 * i, 2, t])],
+  ['quarter-note stabs', [[0, 2, TRIAD], [4, 2, TRIAD], [8, 2, TRIAD], [12, 2, TRIAD]]],
+  ['falling arpeggio', [[0, 4, OCTAVE], [4, 4, FIFTH], [8, 4, THIRD], [12, 4, ROOT]]],
+  ['off-beat chords', [[2, 2, TRIAD], [6, 2, TRIAD], [10, 2, TRIAD], [14, 2, TRIAD]]]];
+const KICK = 36, SIDE_STICK = 37, SNARE = 38, CLAP = 39, CLOSED_HAT = 42, OPEN_HAT = 46, CRASH = 49, RIDE = 51, TAMBOURINE = 54;
+const TOMS = [50, 48, 45, 41];
+const GROOVES = [
+  ['rock', 'x.......x.......', '....x.......x...', 'x.x.x.x.x.x.x.x.', SNARE, CLOSED_HAT],
+  ['pop', 'x.....x.x.......', '....x.......x...', 'x.x.x.x.x.x.x.x.', SNARE, CLOSED_HAT],
+  ['disco', 'x...x...x...x...', '....x.......x...', '..x...x...x...x.', SNARE, OPEN_HAT],
+  ['half-time', 'x.........x.....', '........x.......', 'x.x.x.x.x.x.x.x.', SNARE, CLOSED_HAT],
+  ['funk', 'x..x..x...x.....', '....x.......x.x.', 'xxxxxxxxxxxxxxxx', SNARE, CLOSED_HAT],
+  ['one drop', '........x.......', '........x.......', 'x.x.x.x.x.x.x.x.', SIDE_STICK, CLOSED_HAT],
+  ['march', 'x.......x.......', '....x.xx....x.xx', 'x...x...x...x...', SNARE, CLOSED_HAT],
+  ['clave', 'x.......x.......', 'x..x..x...x.x...', 'x.x.x.x.x.x.x.x.', SIDE_STICK, CLOSED_HAT]];
+const STEP = TPB / 4;
+
+function bandChoices(d) {
+  const m = MELODY_INSTRUMENTS[d[26] >> 4], h = HARMONY_INSTRUMENTS[d[26] & 15], b = BASS_INSTRUMENTS[(d[28] >> 4) % 8];
+  const progression = d[27] >> 4, options = d[29] & 15;
+  return {
+    melodyProgram: m[0], melodyInstrument: m[1], harmonyProgram: h[0], harmonyInstrument: h[1], bassProgram: b[0], bassInstrument: b[1],
+    progression, progressionName: PROGRESSIONS[progression].map((i) => CHORDS[i][2]).join('-'),
+    harmonyPattern: (d[27] & 15) % 8, bassPattern: (d[28] & 15) % 8, groove: (d[29] >> 4) % 8,
+    ride: !!(options & 1), fills: !!(options & 2), clap: !!(options & 4), tambourine: !!(options & 8),
+  };
+}
+function chordTones(chord, base, tone) {
+  const root = base + chord[0], third = root + (chord[1] ? 3 : 4), fifth = root + 7;
+  return tone === ROOT ? [root] : tone === THIRD ? [third] : tone === FIFTH ? [fifth] : tone === OCTAVE ? [root + 12] : [root, third, fifth];
+}
+function playPattern(track, hits, chord, base, barStart, velocity) {
+  for (const [step, steps, tone] of hits) {
+    const length = steps * STEP;
+    for (const pitch of chordTones(chord, base, tone)) track.notes.push({ start: barStart + step * STEP, duration: length - Math.floor(length / 10), pitch, velocity: clampVel(velocity) });
+  }
+}
+const drumHit = (drums, tick, note, velocity) => drums.notes.push({ start: tick, duration: STEP / 2, pitch: note, velocity: clampVel(velocity) });
+function playGroove(drums, groove, c, barStart, fill, crash, base) {
+  const scaled = (v) => Math.floor(v * base / 80);
+  const top = c.ride ? RIDE : groove[5];
+  for (let step = 0; step < 16; step++) {
+    const tick = barStart + step * STEP;
+    if (fill && step >= 12) { drumHit(drums, tick, TOMS[step - 12], scaled(90)); continue; }
+    if (groove[1][step] === 'x') drumHit(drums, tick, KICK, scaled(100));
+    if (groove[2][step] === 'x') {
+      drumHit(drums, tick, groove[4], scaled(groove[4] === SIDE_STICK ? 84 : 94));
+      if (c.clap) drumHit(drums, tick, CLAP, scaled(76));
+    }
+    if (groove[3][step] === 'x') drumHit(drums, tick, top, scaled(step % 4 === 0 ? 72 : 56));
+    if (c.tambourine && (step === 4 || step === 12)) drumHit(drums, tick, TAMBOURINE, scaled(60));
+  }
+  if (crash) drumHit(drums, barStart, CRASH, scaled(96));
+}
+function addBand(song, d) {
+  const c = bandChoices(d);
+  song.tracks[0].program = c.melodyProgram;
+  const home = song.tracks[0].notes[song.tracks[0].notes.length - 1];
+  const bars = (home.start + home.duration) / BAR, finalBar = bars - 1;
+  const base = baseVelocity(d[25]);
+  const harmony = { name: 'Harmony', channel: 2, program: c.harmonyProgram, notes: [] };
+  const bass = { name: 'Bass', channel: 1, program: c.bassProgram, notes: [] };
+  const drums = { name: 'Drums', channel: DRUM_CH, program: 0, notes: [] };
+  const harmonyVelocity = base - (c.harmonyPattern === 0 ? 22 : 14);
+  for (let bar = 0; bar < bars; bar++) {
+    const barStart = bar * BAR;
+    if (bar === finalBar) {
+      playPattern(harmony, [[0, 16, TRIAD]], CHORDS[0], 48, barStart, harmonyVelocity);
+      playPattern(bass, [[0, 16, ROOT]], CHORDS[0], 36, barStart, base + 8);
+      drumHit(drums, barStart, KICK, Math.floor(100 * base / 80));
+      drumHit(drums, barStart, CRASH, Math.floor(100 * base / 80));
+      continue;
+    }
+    const cadence = bar + 1 === finalBar;
+    const chord = CHORDS[cadence ? 4 : PROGRESSIONS[c.progression][bar % 4]];
+    playPattern(harmony, HARMONY_PATTERNS[c.harmonyPattern][1], chord, 48, barStart, harmonyVelocity);
+    playPattern(bass, BASS_PATTERNS[c.bassPattern][1], chord, 36, barStart, base + 8);
+    playGroove(drums, GROOVES[c.groove], c, barStart, c.fills && (bar % 4 === 3 || cadence), bar === 0, base);
+  }
+  song.tracks.push(harmony, bass, drums);
+  return c;
+}
+
+// ============================================================================================
+// MIDI writer (port of src/midi_writer.cpp)
+// ============================================================================================
+function vlq(value) {
+  const out = [value & 0x7f];
+  value = Math.floor(value / 128);
+  while (value > 0) { out.push((value & 0x7f) | 0x80); value = Math.floor(value / 128); }
+  return out.reverse();
+}
+const u32 = (v) => [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+function textEvent(type, text) { const bytes = Array.from(text, (ch) => ch.charCodeAt(0) & 255); return { tick: 0, order: 0, bytes: [0xff, type, ...vlq(bytes.length), ...bytes] }; }
+function trackChunk(events, endTick) {
+  events.sort((a, b) => a.tick !== b.tick ? a.tick - b.tick : a.order - b.order);  // stable, like std::stable_sort
+  const body = [];
+  let now = 0;
+  for (const e of events) { body.push(...vlq(e.tick - now), ...e.bytes); now = e.tick; }
+  body.push(...vlq(Math.max(endTick, now) - now), 0xff, 0x2f, 0x00);
+  return [0x4d, 0x54, 0x72, 0x6b, ...u32(body.length), ...body];
+}
+function writeMidi(song) {
+  const us = Math.floor(60000000 / song.bpm);
+  const file = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, song.tracks.length + 1, TPB >> 8, TPB & 255];
+  file.push(...trackChunk([textEvent(3, song.title), { tick: 0, order: 0, bytes: [0xff, 0x58, 4, 4, 2, 0x18, 8] },
+    { tick: 0, order: 0, bytes: [0xff, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255] }], song.length));
+  for (const t of song.tracks) {
+    const events = [textEvent(3, t.name)];
+    if (t.channel !== DRUM_CH) events.push({ tick: 0, order: 0, bytes: [0xc0 | t.channel, t.program] });
+    for (const n of t.notes) {
+      events.push({ tick: n.start, order: 2, bytes: [0x90 | t.channel, n.pitch, n.velocity] });
+      events.push({ tick: n.start + n.duration, order: 1, bytes: [0x80 | t.channel, n.pitch, 0x40] });
+    }
+    file.push(...trackChunk(events, song.length));
+  }
+  return new Uint8Array(file);
+}
+function makeSong(digest, band) { const song = mapDigest(digest); const choices = band ? addBand(song, digest) : null; return { song, choices, midi: writeMidi(song) }; }
+
+// ============================================================================================
+// Avalanche helpers (port of src/avalanche.cpp)
+// ============================================================================================
+const popcount8 = (x) => { let n = 0; while (x) { n += x & 1; x >>= 1; } return n; };
+const bitDiff = (a, b) => a.reduce((s, x, i) => s + popcount8(x ^ b[i]), 0);
+function editDistance(a, b) {
+  a = Array.from(a); b = Array.from(b);
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = row[0]; row[0] = i;
+    for (let j = 1; j <= b.length; j++) { const above = row[j]; row[j] = Math.min(above + 1, row[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1)); diag = above; }
+  }
+  return row[b.length];
+}
+
+// ============================================================================================
+// std::mt19937_64 (for --stats parity with the C++ tool)
+// ============================================================================================
+class MT64 {
+  constructor(seed) {
+    this.mt = new Array(312);
+    this.mt[0] = BigInt.asUintN(64, BigInt(seed));
+    for (let i = 1; i < 312; i++) { const p = this.mt[i - 1]; this.mt[i] = BigInt.asUintN(64, 6364136223846793005n * (p ^ (p >> 62n)) + BigInt(i)); }
+    this.i = 312;
+  }
+  twist() {
+    const U = 0xFFFFFFFF80000000n, L = 0x7FFFFFFFn, A = 0xB5026F5AA96619E9n;
+    for (let i = 0; i < 312; i++) {
+      const x = (this.mt[i] & U) | (this.mt[(i + 1) % 312] & L);
+      let xa = x >> 1n; if (x & 1n) xa ^= A;
+      this.mt[i] = this.mt[(i + 156) % 312] ^ xa;
+    }
+    this.i = 0;
+  }
+  next() {
+    if (this.i >= 312) this.twist();
+    let y = this.mt[this.i++];
+    y ^= (y >> 29n) & 0x5555555555555555n;
+    y ^= (y << 17n) & 0x71D67FFFEDA60000n;
+    y ^= (y << 37n) & 0xFFF7EEE000000000n;
+    y ^= y >> 43n;
+    return y;
+  }
+  below(n) { return Number(this.next() % BigInt(n)); }
+}
+function chiSquare(counts) {
+  const total = counts.reduce((a, b) => a + b, 0), e = total / counts.length;
+  return counts.reduce((s, c) => s + (c - e) ** 2 / e, 0);
+}
+
+// ============================================================================================
+// Audio: a small synthesizer for live playback (the .mid download uses real GM instruments)
+// ============================================================================================
+let audio = null, master = null, noise = null, playback = null;
+function ensureAudio() {
+  if (!audio) {
+    audio = new (window.AudioContext || window.webkitAudioContext)();
+    noise = audio.createBuffer(1, audio.sampleRate * 2, audio.sampleRate);
+    const data = noise.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  }
+  if (audio.state === 'suspended') audio.resume();
+  return audio;
+}
+function preset(program) {
+  if ([73, 75, 79].includes(program)) return { wave: 'sine', attack: 0.04, tau: 0.6, sustain: 0.8, release: 0.08, gain: 0.32, vibrato: true };
+  if ([80].includes(program)) return { wave: 'square', attack: 0.01, tau: 0.3, sustain: 0.6, release: 0.05, gain: 0.12, cutoff: 3000 };
+  if ([48, 49, 52, 88, 89, 90, 92, 16, 61, 68, 71].includes(program)) return { wave: 'sawtooth', attack: 0.12, tau: 0.8, sustain: 0.85, release: 0.25, gain: 0.08, cutoff: 1400 };
+  if (program >= 32 && program <= 43) return { wave: 'triangle', attack: 0.01, tau: 0.35, sustain: 0.55, release: 0.08, gain: 0.5, cutoff: 900 };
+  if ([8, 9, 10, 108, 114].includes(program)) return { wave: 'sine', attack: 0.003, tau: 0.25, sustain: 0.0, release: 0.3, gain: 0.35, bell: true };
+  if ([11, 12, 13].includes(program)) return { wave: 'sine', attack: 0.003, tau: 0.35, sustain: 0.0, release: 0.2, gain: 0.4 };
+  return { wave: 'triangle', attack: 0.004, tau: 0.45, sustain: 0.15, release: 0.15, gain: 0.38 };  // pianos, guitars, harps
+}
+function playVoice(ctx, out, freq, t, dur, vel, p) {
+  const osc = ctx.createOscillator(); osc.type = p.wave; osc.frequency.value = freq;
+  const env = ctx.createGain();
+  const peak = p.gain * Math.pow(vel / 127, 1.4);
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(peak, t + p.attack);
+  env.gain.setTargetAtTime(peak * p.sustain + 0.0001, t + p.attack, p.tau);
+  env.gain.setTargetAtTime(0, t + dur, p.release);
+  let node = osc;
+  if (p.cutoff) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = p.cutoff; osc.connect(f); node = f; }
+  node.connect(env); env.connect(out);
+  if (p.bell) { const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = freq * 4; const g2 = ctx.createGain(); g2.gain.setValueAtTime(peak * 0.3, t); g2.gain.setTargetAtTime(0, t, 0.08); o2.connect(g2); g2.connect(out); o2.start(t); o2.stop(t + 1); }
+  if (p.vibrato) { const lfo = ctx.createOscillator(); lfo.frequency.value = 5; const depth = ctx.createGain(); depth.gain.value = freq * 0.006; lfo.connect(depth); depth.connect(osc.frequency); lfo.start(t); lfo.stop(t + dur + p.release * 6); }
+  osc.start(t); osc.stop(t + dur + p.release * 6 + 0.05);
+}
+function noiseBurst(ctx, out, t, length, type, freq, gain) {
+  const src = ctx.createBufferSource(); src.buffer = noise;
+  const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq;
+  const env = ctx.createGain(); env.gain.setValueAtTime(gain, t); env.gain.exponentialRampToValueAtTime(0.0001, t + length);
+  src.connect(f); f.connect(env); env.connect(out); src.start(t, Math.random()); src.stop(t + length + 0.02);
+}
+function tone(ctx, out, t, from, to, length, gain, wave = 'sine') {
+  const osc = ctx.createOscillator(); osc.type = wave;
+  osc.frequency.setValueAtTime(from, t); osc.frequency.exponentialRampToValueAtTime(to, t + length);
+  const env = ctx.createGain(); env.gain.setValueAtTime(gain, t); env.gain.exponentialRampToValueAtTime(0.0001, t + length);
+  osc.connect(env); env.connect(out); osc.start(t); osc.stop(t + length + 0.02);
+}
+function playDrum(ctx, out, note, t, vel) {
+  const g = Math.pow(vel / 127, 1.3);
+  switch (note) {
+    case KICK: tone(ctx, out, t, 150, 42, 0.28, 0.9 * g); break;
+    case SNARE: noiseBurst(ctx, out, t, 0.16, 'highpass', 1200, 0.45 * g); tone(ctx, out, t, 220, 160, 0.08, 0.3 * g, 'triangle'); break;
+    case SIDE_STICK: noiseBurst(ctx, out, t, 0.04, 'bandpass', 2200, 0.5 * g); break;
+    case CLAP: [0, 0.012, 0.024].forEach((dt) => noiseBurst(ctx, out, t + dt, 0.09, 'bandpass', 1500, 0.4 * g)); break;
+    case CLOSED_HAT: noiseBurst(ctx, out, t, 0.045, 'highpass', 7500, 0.22 * g); break;
+    case OPEN_HAT: noiseBurst(ctx, out, t, 0.28, 'highpass', 7000, 0.18 * g); break;
+    case RIDE: noiseBurst(ctx, out, t, 0.5, 'highpass', 5500, 0.12 * g); break;
+    case CRASH: noiseBurst(ctx, out, t, 1.6, 'highpass', 4000, 0.3 * g); break;
+    case TAMBOURINE: noiseBurst(ctx, out, t, 0.14, 'highpass', 9000, 0.25 * g); break;
+    default: { const base = { 50: 210, 48: 170, 45: 130, 41: 95 }[note] || 150; tone(ctx, out, t, base, base * 0.6, 0.3, 0.6 * g); }
+  }
+}
+const midiFreq = (p) => 440 * Math.pow(2, (p - 69) / 12);
+function stopPlayback() {
+  if (master) { const m = master; m.gain.setTargetAtTime(0, audio.currentTime, 0.03); setTimeout(() => m.disconnect(), 300); master = null; }
+  if (playback) { cancelAnimationFrame(playback.raf); playback.onEnd && playback.onEnd(); playback = null; }
+}
+// Plays one or more songs back to back. `onTick(songIndex, tick)` drives the on-screen playhead.
+function playSongs(songs, onTick, onEnd) {
+  stopPlayback();
+  const ctx = ensureAudio();
+  master = ctx.createGain(); master.gain.value = 0.9;
+  const comp = ctx.createDynamicsCompressor(); master.connect(comp); comp.connect(ctx.destination);
+  let t0 = ctx.currentTime + 0.12;
+  const timeline = [];
+  for (const song of songs) {
+    const spt = 60 / (song.bpm * TPB);
+    for (const track of song.tracks) {
+      const p = preset(track.program);
+      for (const n of track.notes) {
+        const t = t0 + n.start * spt;
+        if (track.channel === DRUM_CH) playDrum(ctx, master, n.pitch, t, n.velocity);
+        else playVoice(ctx, master, midiFreq(n.pitch), t, n.duration * spt, n.velocity, p);
+      }
+    }
+    timeline.push({ t0, spt, length: song.length });
+    t0 += song.length * spt + 0.7;
+  }
+  playback = { onEnd };
+  const frame = () => {
+    const now = ctx.currentTime;
+    const index = timeline.findIndex((s) => now < s.t0 + s.length * s.spt);
+    if (index < 0) { const end = playback.onEnd; playback = null; end && end(); return; }
+    const s = timeline[index];
+    onTick && onTick(index, Math.max(0, (now - s.t0) / s.spt));
+    playback.raf = requestAnimationFrame(frame);
+  };
+  playback.raf = requestAnimationFrame(frame);
+}
+
+// ============================================================================================
+// UI helpers
+// ============================================================================================
+const $ = (id) => document.getElementById(id);
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) { if (k === 'class') node.className = v; else if (k === 'text') node.textContent = v; else node.setAttribute(k, v); }
+  for (const c of children) node.append(c);
+  return node;
+}
+const commas = (n) => Math.round(n).toLocaleString('en-US');
+function tile(label, value, note) { return el('div', { class: 'tile' }, el('div', { class: 'label', text: label }), el('div', { class: 'value', text: value }), el('div', { class: 'note', text: note })); }
+const songSeconds = (song) => song.length / TPB * 60 / song.bpm;
+const shortFp = (hex) => hex.slice(0, 16) + '…';
+
+// Tabs
+const tabs = ['song', 'aval', 'inside', 'dist'];
+function showTab(name) {
+  for (const t of tabs) { $('tab-' + t).setAttribute('aria-selected', String(t === name)); $('panel-' + t).hidden = t !== name; }
+  if (name === 'aval') renderAvalanche();
+  if (name === 'inside') { $('inside-text').value = state.text; renderInside(); }
+}
+tabs.forEach((t, i) => {
+  $('tab-' + t).addEventListener('click', () => showTab(t));
+  $('tab-' + t).addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; showTab(next); $('tab-' + next).focus(); }
+  });
+});
+
+// ============================================================================================
+// 1. Your song
+// ============================================================================================
+const state = { source: 'text', text: 'jacob', file: null, fileDigest: null, history: [] };
+let current = null;  // { digest, label, song, choices, midi, fp }
+
+function currentDigest() { return state.source === 'file' ? state.fileDigest : sha256(utf8(state.text)); }
+function currentLabel() { return state.source === 'file' ? (state.file ? 'file ' + state.file.name : '') : '"' + state.text + '"'; }
+
+function renderSong() {
+  const digest = currentDigest();
+  const hashBox = $('hash'), notes = $('notes');
+  hashBox.replaceChildren(); notes.replaceChildren(); $('song-tiles').replaceChildren(); $('roll').replaceChildren(); $('band-info').replaceChildren(); $('roll-legend').replaceChildren();
+  ['play', 'download'].forEach((id) => { $(id).disabled = !digest; });
+  if (!digest) { current = null; $('song-meta').textContent = 'Choose a file to hash.'; return; }
+  const band = $('band').checked;
+  const { song, choices, midi } = makeSong(digest, band);
+  current = { digest, label: currentLabel(), song, choices, midi, fp: toHex(sha256(midi)), band };
+
+  digest.forEach((b, i) => {
+    const role = i < 24 ? 'melody' : i === 24 ? 'tempo' : i === 25 ? 'loud' : i < 30 ? 'band' : 'spare';
+    const h = hex2(b);
+    const titles = { melody: `byte ${i}: ${noteName(PITCHES[b >> 4])}, ${RHYTHM_NAMES[RHYTHMS[b & 15]]}`, tempo: `byte 24: ${song.bpm} BPM`, loud: `byte 25: velocity ${baseVelocity(b)}`, band: `byte ${i}: band settings`, spare: `byte ${i}: spare` };
+    hashBox.append(el('span', { class: 'byte ' + role, id: 'byte-' + i, title: titles[role] }, el('span', { class: 'hi', text: h[0] }), el('span', { class: 'lo', text: h[1] })));
+  });
+
+  for (let i = 0; i < 24; i++) {
+    const b = digest[i], h = hex2(b), slot = RHYTHMS[b & 15];
+    notes.append(el('div', { class: 'notecell', id: 'note-' + i },
+      el('span', { class: 'nb' }, el('span', { class: 'hi', text: h[0] }), el('span', { class: 'lo', text: h[1] })),
+      el('span', { class: 'nn', text: noteName(PITCHES[b >> 4]) }), el('span', { class: 'nr', text: RHYTHM_NAMES[slot] })));
+  }
+
+  const tiles = $('song-tiles');
+  tiles.append(tile('Tempo', song.bpm + ' BPM', `byte 24 = ${hex2(digest[24])} → 80 + ${digest[24]}×80/255`));
+  tiles.append(tile('Loudness', 'velocity ' + baseVelocity(digest[25]), `byte 25 = ${hex2(digest[25])}, accents on beats 1 and 3`));
+  tiles.append(tile('Length', songSeconds(song).toFixed(1) + ' s', `${song.tracks.reduce((s, t) => s + t.notes.length, 0)} notes, ${song.tracks.length} track${song.tracks.length > 1 ? 's' : ''}`));
+  tiles.append(tile('.mid fingerprint', current.fp.slice(0, 12) + '…', `SHA-256 of the ${midi.length}-byte file`));
+
+  renderRoll(song, band);
+  if (choices) {
+    const c = choices, drums = [c.ride && 'ride cymbal', c.fills && 'tom fills', c.clap && 'hand clap', c.tambourine && 'tambourine'].filter(Boolean).join(', ') || 'no extras';
+    const list = el('table', {}, el('tbody', {},
+      ...[[26, `melody on ${c.melodyInstrument}, harmony on ${c.harmonyInstrument}`], [27, `chords ${c.progressionName} (then V-I to finish), harmony plays ${HARMONY_PATTERNS[c.harmonyPattern][0]}`],
+          [28, `${c.bassInstrument}, ${BASS_PATTERNS[c.bassPattern][0]}`], [29, `${GROOVES[c.groove][0]} groove, ${drums}`]]
+        .map(([i, text]) => el('tr', {}, el('td', { class: 'mono', text: `byte ${i} = ${hex2(digest[i])}` }), el('td', { text })))));
+    $('band-info').append(list);
+  }
+  $('song-meta').textContent = `${current.label.length > 48 ? current.label.slice(0, 48) + '…' : current.label}`;
+}
+
+function renderRoll(song, band) {
+  const W = 1000, H = band ? 260 : 200, left = 36, right = 8, top = 8, bottom = 22;
+  const low = band ? 36 : 55, high = 92;
+  const x = (tick) => left + (W - left - right) * tick / song.length;
+  const y = (p) => top + (H - top - bottom) * (high - p) / (high - low);
+  const rowH = (H - top - bottom) / (high - low);
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'Piano roll of the song');
+  const add = (tag, attrs) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); svg.append(n); return n; };
+  add('rect', { x: left, y: top, width: W - left - right, height: H - top - bottom, class: 'roll-bg', rx: 6 });
+  for (let b = 0; b * BAR <= song.length; b++) add('line', { x1: x(b * BAR), x2: x(b * BAR), y1: top, y2: H - bottom, class: 'roll-grid' });
+  for (const p of [48, 60, 72, 84]) if (p >= low && p <= high) { add('line', { x1: left, x2: W - right, y1: y(p), y2: y(p), class: 'roll-grid' }); add('text', { x: left - 6, y: y(p) + 4, 'text-anchor': 'end', class: 'axis-label' }).textContent = noteName(p); }
+  const colors = { Melody: 'var(--s1)', Harmony: 'var(--muted)', Bass: 'var(--s2)' };
+  for (const track of [...song.tracks].reverse()) {
+    if (track.channel === DRUM_CH) continue;
+    for (const n of track.notes) add('rect', { x: x(n.start), y: y(n.pitch) - rowH * 0.5, width: Math.max(2, x(n.start + n.duration) - x(n.start) - 1), height: Math.max(3, rowH * 0.9), rx: 2, fill: colors[track.name] });
+  }
+  if (band) {  // drum hits as ticks along the bottom
+    const drums = song.tracks.find((t) => t.channel === DRUM_CH);
+    for (const n of drums.notes) if (n.pitch === KICK || n.pitch === SNARE || n.pitch === SIDE_STICK) add('rect', { x: x(n.start), y: H - bottom + (n.pitch === KICK ? 10 : 4), width: 3, height: 6, fill: 'var(--ink-2)' });
+    $('roll-legend').append(...[['var(--s1)', 'melody'], ['var(--muted)', 'harmony'], ['var(--s2)', 'bass'], ['var(--ink-2)', 'kick and snare']].map(([c, t]) => el('span', {}, Object.assign(el('i'), { style: `background:${c}` }), t)));
+  }
+  const head = add('line', { x1: left, x2: left, y1: top, y2: H - bottom, class: 'playhead', visibility: 'hidden' });
+  $('roll').append(svg);
+  current.roll = { head, x };
+}
+
+function highlight(tick) {
+  if (!current) return;
+  const notes = current.song.tracks[0].notes;
+  let index = -1;
+  for (let i = 0; i < 24; i++) if (tick >= notes[i].start && tick < (notes[i + 1] ? notes[i + 1].start : Infinity)) index = i;
+  if (tick >= notes[24].start) index = -1;
+  document.querySelectorAll('.notecell.now, .byte.now').forEach((n) => n.classList.remove('now'));
+  if (index >= 0) { $('note-' + index).classList.add('now'); $('byte-' + index).classList.add('now'); }
+  if (current.roll) { const xv = current.roll.x(tick); current.roll.head.setAttribute('x1', xv); current.roll.head.setAttribute('x2', xv); current.roll.head.setAttribute('visibility', 'visible'); }
+}
+function clearHighlight() {
+  document.querySelectorAll('.notecell.now, .byte.now').forEach((n) => n.classList.remove('now'));
+  if (current && current.roll) current.roll.head.setAttribute('visibility', 'hidden');
+}
+
+function recordHistory() {
+  const earlier = state.history.find((h) => h.fp === current.fp);
+  state.history.push({ label: current.label, band: current.band, fp: current.fp, same: earlier ? earlier.n : null, n: state.history.length + 1 });
+  const body = $('history'); body.replaceChildren();
+  for (const h of [...state.history].reverse()) {
+    body.append(el('tr', {}, el('td', { text: String(h.n) }), el('td', { text: h.label }), el('td', { text: h.band ? 'band' : 'melody' }),
+      el('td', { class: 'mono', text: h.fp }), el('td', { class: h.same ? 'match' : 'muted', text: h.same ? `identical to #${h.same}` : 'new song' })));
+  }
+}
+
+function playCurrent() {
+  if (!current) return;
+  recordHistory();
+  $('play').textContent = '▶ Playing…';
+  playSongs([current.song], (_, tick) => highlight(tick), () => { clearHighlight(); $('play').textContent = '▶ Play'; });
+}
+$('play').addEventListener('click', playCurrent);
+$('stop').addEventListener('click', stopPlayback);
+$('text').addEventListener('input', (e) => { state.text = e.target.value; stopPlayback(); renderSong(); });
+$('text').addEventListener('keydown', (e) => { if (e.key === 'Enter') playCurrent(); });
+$('band').addEventListener('change', () => { stopPlayback(); renderSong(); });
+$('download').addEventListener('click', () => {
+  if (!current) return;
+  const base = (state.source === 'file' && state.file ? state.file.name : state.text).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40) || 'song';
+  const url = URL.createObjectURL(new Blob([current.midi], { type: 'audio/midi' }));
+  const a = el('a', { href: url, download: base + (current.band ? '_band' : '') + '.mid' });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+function setSource(source) {
+  state.source = source;
+  $('src-text').setAttribute('aria-pressed', String(source === 'text'));
+  $('src-file').setAttribute('aria-pressed', String(source === 'file'));
+  $('text-source').hidden = source !== 'text';
+  $('file-source').hidden = source !== 'file';
+  stopPlayback(); renderSong();
+}
+$('src-text').addEventListener('click', () => { setSource('text'); $('text').focus(); });
+$('src-file').addEventListener('click', () => setSource('file'));
+const drop = $('drop');
+drop.addEventListener('click', () => $('file').click());
+drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } });
+drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) hashFile(e.dataTransfer.files[0]); });
+$('file').addEventListener('change', (e) => { if (e.target.files[0]) hashFile(e.target.files[0]); });
+async function hashFile(file) {
+  // Like file mode in the C++ tool: hash the file a piece at a time, so large files work too.
+  const bar = $('file-progress'); bar.hidden = false; bar.value = 0;
+  $('file-info').textContent = `Hashing ${file.name}…`;
+  const hasher = new Sha256(), piece = 1 << 20;
+  for (let at = 0; at < file.size; at += piece) {
+    hasher.update(new Uint8Array(await file.slice(at, at + piece).arrayBuffer()));
+    bar.value = Math.min(1, (at + piece) / file.size);
+  }
+  state.file = file; state.fileDigest = hasher.finish();
+  bar.hidden = true;
+  $('file-info').textContent = `${file.name} · ${commas(file.size)} bytes · SHA-256 ${toHex(state.fileDigest).slice(0, 16)}…`;
+  stopPlayback(); renderSong();
+}
+
+// ============================================================================================
+// 2. Avalanche
+// ============================================================================================
+let aval = null;
+function renderAvalanche() {
+  const a = $('aval-a').value, b = $('aval-b').value;
+  const da = sha256(utf8(a)), db = sha256(utf8(b));
+  const bits = bitDiff(da, db);
+  const ha = toHex(da), hb = toHex(db);
+  aval = { a: makeSong(da, false).song, b: makeSong(db, false).song };
+  const edits = editDistance(a, b);
+  $('aval-edit').textContent = `The inputs are ${edits} edit${edits === 1 ? '' : 's'} apart.`;
+
+  let hexDiff = 0;
+  const line = (hex, other) => Array.from(hex, (ch, i) => { const d = ch !== other[i]; return d ? el('span', { class: 'd', text: ch }) : document.createTextNode(ch); });
+  for (let i = 0; i < 64; i++) if (ha[i] !== hb[i]) hexDiff++;
+  $('aval-hex-a').replaceChildren(...line(ha, hb));
+  $('aval-hex-b').replaceChildren(...line(hb, ha));
+
+  let samePitch = 0, sameRhythm = 0;
+  for (let i = 0; i < 24; i++) { if ((da[i] >> 4) === (db[i] >> 4)) samePitch++; if (RHYTHMS[da[i] & 15] === RHYTHMS[db[i] & 15]) sameRhythm++; }
+  const z = (bits - 128) / 8;
+  $('aval-tiles').replaceChildren(
+    tile('Bits that flipped', `${bits} of 256`, `${(100 * bits / 256).toFixed(1)}%. Ideal hash: 128 ± 8 (this is ${z >= 0 ? '+' : ''}${z.toFixed(1)} σ)`),
+    tile('Hex digits that differ', `${hexDiff} of 64`, 'about 60 by chance'),
+    tile('Notes with the same pitch', `${samePitch} of 24`, `same rhythm: ${sameRhythm} (chance: 1.5 and 7.5)`),
+    tile('Tempo', `${aval.a.bpm} vs ${aval.b.bpm}`, 'BPM, from byte 24 of each hash'));
+
+  const grid = $('aval-bits'); grid.replaceChildren();
+  grid.setAttribute('aria-label', `${bits} of 256 bits flipped`);
+  for (let i = 0; i < 256; i++) {
+    const flipped = ((da[i >> 3] ^ db[i >> 3]) >> (7 - (i & 7))) & 1;
+    grid.append(el('div', { class: 'bit' + (flipped ? ' flip' : ''), title: `bit ${i} (byte ${i >> 3}): ${flipped ? 'flipped' : 'same'}` }));
+  }
+
+  const vs = $('aval-vs'); vs.replaceChildren();
+  for (let row = 0; row < 3; row++) {
+    const g = el('div', { class: 'vs', style: 'margin-bottom:12px' }, el('div'));
+    for (let i = row * 8; i < row * 8 + 8; i++) g.append(el('div', { class: 'h', text: 'note ' + (i + 1) }));
+    for (const [who, d] of [['A', da], ['B', db]]) {
+      g.append(el('div', { class: 'who', text: who }));
+      for (let i = row * 8; i < row * 8 + 8; i++) {
+        const same = (da[i] >> 4) === (db[i] >> 4);
+        g.append(el('div', { class: 'c' + (same ? ' same' : ''), title: `byte ${hex2(d[i])}` , text: `${noteName(PITCHES[d[i] >> 4])} ${RHYTHM_SYMBOLS[RHYTHMS[d[i] & 15]]}` }));
+      }
+    }
+    vs.append(g);
+  }
+}
+['aval-a', 'aval-b'].forEach((id) => $(id).addEventListener('input', () => { stopPlayback(); renderAvalanche(); }));
+$('aval-play').addEventListener('click', () => playSongs([aval.a, aval.b]));
+$('aval-play-a').addEventListener('click', () => playSongs([aval.a]));
+$('aval-play-b').addEventListener('click', () => playSongs([aval.b]));
+$('aval-stop').addEventListener('click', stopPlayback);
+
+// ============================================================================================
+// 3. Inside SHA-256
+// ============================================================================================
+let inside = null;
+function renderInside() {
+  const text = $('inside-text').value;
+  const bytes = utf8(text), padded = padMessage(bytes), blocks = padded.length / 64;
+  const shown = Math.min(blocks, 8);
+  const traces = [], st = H0.slice(), w = new Uint32Array(64);
+  for (let k = 0; k < blocks; k++) { const tr = k < shown ? {} : null; compress(st, padded, 64 * k, w, tr); if (tr) traces.push(tr); }
+  $('inside-summary').textContent = `${commas(bytes.length)} message byte${bytes.length === 1 ? '' : 's'} → ${blocks} block${blocks === 1 ? '' : 's'} of 64 bytes → ${blocks * 64} rounds → digest ${toHex(sha256(bytes))}`;
+
+  const wrap = $('inside-blocks'); wrap.replaceChildren();
+  const n = bytes.length, lenStart = padded.length - 8;
+  const showBlocks = blocks <= 4 ? [...Array(blocks).keys()] : [0, 1, blocks - 1];
+  showBlocks.forEach((k, j) => {
+    if (j > 0 && k !== showBlocks[j - 1] + 1) wrap.append(el('p', { class: 'muted', text: `… ${k - showBlocks[j - 1] - 1} more blocks …` }));
+    wrap.append(el('div', { class: 'muted', style: 'font-size:13px', text: `Block ${k + 1}` }));
+    const g = el('div', { class: 'block' });
+    for (let i = 64 * k; i < 64 * k + 64; i++) {
+      const cls = i < n ? 'b-msg' : i === n ? 'b-one' : i >= lenStart ? 'b-len' : 'b-zero';
+      g.append(el('span', { class: cls, text: hex2(padded[i]) }));
+    }
+    wrap.append(g);
+  });
+
+  const pick = $('inside-block-pick'); pick.replaceChildren(...traces.map((_, k) => el('option', { value: k, text: String(k + 1) })));
+  $('inside-block-pick-wrap').hidden = traces.length < 2;
+  inside = { traces };
+  renderRound();
+}
+function renderRound() {
+  const tr = inside.traces[Number($('inside-block-pick').value) || 0];
+  const r = Number($('round').value);
+  const vars = tr.rounds[r], prev = tr.rounds[Math.max(0, r - 1)];
+  $('round-label').textContent = r === 0 ? 'Before round 1: the working variables start as the current hash value.'
+    : `After round ${r} of 64: used W[${r - 1}] = ${hex8(tr.w[r - 1])} and K[${r - 1}] = ${hex8(K[r - 1])}. New values went into a and e; the rest shifted along.`;
+  $('round-words').replaceChildren(...'abcdefgh'.split('').map((name, i) =>
+    el('div', { class: r > 0 && (i === 0 || i === 4) ? 'changed' : '' }, el('b', { text: name }), document.createTextNode(hex8(vars[i])))));
+  $('sched').replaceChildren(...tr.w.map((word, t) => el('span', { class: (t < 16 ? 'fromblock' : '') + (r > 0 && t === r - 1 ? ' cur' : ''), title: `W[${t}]`, text: hex8(word) })));
+}
+$('inside-text').addEventListener('input', () => { renderInside(); });
+$('round').addEventListener('input', renderRound);
+$('inside-block-pick').addEventListener('change', renderRound);
+
+// ============================================================================================
+// 4. Distribution (port of src/stats.cpp)
+// ============================================================================================
+function niceScale(max) {
+  const raw = Math.max(max, 1) / 4, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5].map((m) => m * mag).find((s) => s >= raw) || 10 * mag;
+  return [Math.ceil(max / step) * step, step];
+}
+const tickLabel = (v, max) => (max < 10000 || v === 0) ? commas(v) : (v % 1000 === 0 ? commas(v / 1000) + 'K' : (v / 1000).toFixed(1) + 'K');
+function columnPath(x, y, w, h) { const r = Math.min(4, w / 2, h); return `M${x},${y + h} L${x},${y + r} A${r},${r} 0 0 1 ${x + r},${y} L${x + w - r},${y} A${r},${r} 0 0 1 ${x + w},${y + r} L${x + w},${y + h} Z`; }
+function columnChart({ width, counts, names, xLabels, xSub, expected, sigma, focusable, aria }) {
+  const height = 300, left = 56, right = 12, top = 28, bottom = xSub ? 46 : 30;
+  const pw = width - left - right, ph = height - top - bottom, base = top + ph;
+  const total = counts.reduce((a, b) => a + b, 0);
+  const [axisMax, step] = niceScale(Math.max(expected + 2 * sigma, ...counts));
+  const y = (v) => base - ph * v / axisMax, slot = pw / counts.length, bw = Math.max(1, Math.min(24, slot - 2));
+  let s = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${aria}">`;
+  for (let i = 0; i <= Math.round(axisMax / step); i++) {
+    const v = step * i, yy = y(v).toFixed(2);
+    if (i > 0) s += `<line class="grid-line" x1="${left}" x2="${left + pw}" y1="${yy}" y2="${yy}"/>`;
+    s += `<text class="tick" x="${left - 8}" y="${(y(v) + 4).toFixed(2)}" text-anchor="end">${tickLabel(v, axisMax)}</text>`;
+  }
+  const bt = y(expected + 2 * sigma), bb = y(Math.max(0, expected - 2 * sigma));
+  s += `<rect class="band-area" x="${left}" y="${bt.toFixed(2)}" width="${pw}" height="${(bb - bt).toFixed(2)}"/>`;
+  counts.forEach((c, i) => {
+    const x = left + slot * i, yy = y(c), value = `${commas(c)} (${(100 * c / total).toFixed(2)}%)`;
+    s += `<g class="col"><path class="bar" d="${columnPath(x + (slot - bw) / 2, yy, bw, base - yy)}"/><rect class="hit" x="${x.toFixed(2)}" y="${top}" width="${slot.toFixed(2)}" height="${ph}"${focusable ? ' tabindex="0"' : ''} data-value="${value}" data-label="${names[i]}" aria-label="${names[i]}: ${value}"/></g>`;
+  });
+  s += `<line class="baseline" x1="${left}" x2="${left + pw}" y1="${base}" y2="${base}"/>`;
+  s += `<line class="expected" x1="${left}" x2="${left + pw}" y1="${y(expected).toFixed(2)}" y2="${y(expected).toFixed(2)}"/>`;
+  s += `<text class="expected-label" x="${left + pw}" y="${(bt - 7).toFixed(2)}" text-anchor="end">expected if uniform: ${commas(expected)}</text>`;
+  counts.forEach((_, i) => {
+    const cx = (left + slot * (i + 0.5)).toFixed(2);
+    if (xLabels[i]) s += `<text class="xlabel" x="${cx}" y="${base + 18}" text-anchor="middle">${xLabels[i]}</text>`;
+    if (xSub) s += `<text class="xsub" x="${cx}" y="${base + 34}" text-anchor="middle">${xSub[i]}</text>`;
+  });
+  return s + '</svg>';
+}
+function attachTooltips(root) {
+  const tip = $('tip');
+  const show = (hit, x, y) => {
+    tip.firstChild.textContent = hit.dataset.value; tip.lastChild.textContent = hit.dataset.label; tip.hidden = false;
+    const box = tip.getBoundingClientRect();
+    let l = x + 14, t = y - box.height - 14;
+    if (l + box.width > innerWidth - 8) l = x - box.width - 14;
+    if (t < 8) t = y + 14;
+    tip.style.left = Math.max(8, l) + 'px'; tip.style.top = t + 'px';
+  };
+  root.querySelectorAll('.hit').forEach((hit) => {
+    hit.addEventListener('pointermove', (e) => show(hit, e.clientX, e.clientY));
+    hit.addEventListener('pointerleave', () => { tip.hidden = true; });
+    hit.addEventListener('focus', () => { const r = hit.getBoundingClientRect(); show(hit, r.left + r.width / 2, r.top + r.height / 3); });
+    hit.addEventListener('blur', () => { tip.hidden = true; });
+  });
+}
+const hexByte = (v) => '0x' + hex2(v);
+let distRunning = false;
+async function runDistribution() {
+  if (distRunning) return;
+  const count = Math.max(100, Math.min(200000, Math.floor(Number($('dist-count').value) || 10000)));
+  const seed = Math.max(0, Math.floor(Number($('dist-seed').value) || 0));
+  distRunning = true; $('dist-run').disabled = true;
+  const bar = $('dist-progress'); bar.hidden = false; bar.value = 0;
+  const rng = new MT64(seed), bytes = new Array(256).fill(0), pitches = new Array(16).fill(0);
+  for (let i = 0; i < count; i++) {
+    const len = 8 + rng.below(17);
+    let text = '';
+    for (let k = 0; k < len; k++) text += String.fromCharCode(97 + rng.below(26));
+    const d = sha256(utf8(text));
+    for (let b = 0; b < 32; b++) { bytes[d[b]]++; if (b < 24) pitches[d[b] >> 4]++; }
+    if (i % 500 === 499) { bar.value = i / count; await new Promise((r) => setTimeout(r, 0)); }
+  }
+  bar.hidden = true; distRunning = false; $('dist-run').disabled = false;
+  renderDistribution({ count, seed, bytes, pitches });
+}
+function renderDistribution({ count, seed, bytes, pitches }) {
+  const notes = count * 24, total = count * 32;
+  const pc = chiSquare(pitches), bc = chiSquare(bytes);
+  const ok = Math.abs(pc - 15) <= 3 * Math.sqrt(30) && Math.abs(bc - 255) <= 3 * Math.sqrt(510);
+  const out = $('dist-out'); out.replaceChildren();
+  const tiles = el('div', { class: 'tiles' },
+    tile('Inputs hashed', commas(count), `seed ${seed} · ${commas(total)} bytes · ${commas(notes)} notes`),
+    tile('Pitch chi-square', pc.toFixed(1), 'uniform gives 15 ± 5.5'),
+    tile('Byte chi-square', bc.toFixed(1), 'uniform gives 255 ± 22.6'));
+  out.append(el('div', { class: 'card' }, tiles, el('p', { style: 'margin:10px 0 0', class: 'sub', text: ok
+    ? 'Both statistics are within 3 standard deviations of a perfectly uniform source: no pitch or byte value is favored.'
+    : 'At least one statistic is more than 3 standard deviations from a uniform source.' })));
+  const pe = notes / 16, ps = Math.sqrt(notes / 16 * 15 / 16), be = total / 256, bs = Math.sqrt(total / 256 * 255 / 256);
+  const pitchCard = el('div', { class: 'card' }, el('h2', { text: 'Melody pitches' }),
+    el('p', { class: 'sub', text: `How many of the ${commas(notes)} melody notes landed on each pitch. Shaded band: expected ± 2σ, where about 95% of columns land by chance.` }));
+  const pitchChart = el('div'); pitchChart.innerHTML = columnChart({ width: 800, counts: pitches, names: PITCHES.map((p, i) => `${noteName(p)} (hex digit ${i.toString(16)})`), xLabels: PITCHES.map(noteName), xSub: PITCHES.map((_, i) => i.toString(16)), expected: pe, sigma: ps, focusable: true, aria: 'Column chart of melody notes per pitch' });
+  pitchCard.append(pitchChart);
+  const byteCard = el('div', { class: 'card' }, el('h2', { text: 'Digest byte values' }),
+    el('p', { class: 'sub', text: `How often each value 0x00 to 0xff appeared among all ${commas(total)} digest bytes. Rarest ${hexByte(bytes.indexOf(Math.min(...bytes)))} (${commas(Math.min(...bytes))}), commonest ${hexByte(bytes.indexOf(Math.max(...bytes)))} (${commas(Math.max(...bytes))}).` }));
+  const byteChart = el('div'); byteChart.innerHTML = columnChart({ width: 1060, counts: bytes, names: bytes.map((_, v) => 'byte value ' + hexByte(v)), xLabels: bytes.map((_, v) => (v % 32 === 0 || v === 255) ? hexByte(v) : ''), xSub: null, expected: be, sigma: bs, focusable: false, aria: 'Column chart of how often each byte value appeared' });
+  byteCard.append(byteChart);
+  const table = el('table', {}, el('thead', {}, el('tr', {}, el('th', { text: 'Hex digit' }), el('th', { text: 'Pitch' }), el('th', { text: 'Notes' }), el('th', { text: 'vs expected' }))),
+    el('tbody', {}, ...pitches.map((c, i) => el('tr', {}, el('td', { text: i.toString(16) }), el('td', { text: noteName(PITCHES[i]) }), el('td', { text: commas(c) }), el('td', { text: ((c / pe - 1) * 100).toFixed(1) + '%' })))));
+  pitchCard.append(el('details', {}, el('summary', { text: 'Table view' }), el('div', { class: 'table-wrap' }, table)));
+  out.append(pitchCard, byteCard);
+  attachTooltips(out);
+  out.dataset.result = `pitch=${pc.toFixed(2)} byte=${bc.toFixed(2)}`;
+}
+$('dist-run').addEventListener('click', runDistribution);
+
+// ============================================================================================
+// Self-test: the port must agree with NIST and with the C++ build's pinned demo songs
+// ============================================================================================
+function selfTest() {
+  const checks = [
+    [toHex(sha256(utf8(''))), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'SHA-256 of ""'],
+    [toHex(sha256(utf8('abc'))), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 'SHA-256 of "abc"'],
+    [toHex(sha256(utf8('abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'))), '248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1', 'two-block NIST message'],
+    [toHex(sha256(utf8('a'.repeat(1000000)))), 'cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0', 'one million a'],
+    [toHex(sha256(makeSong(sha256(utf8('jacob')), false).midi)), 'd5033c0e1d2b157b08373fa4c5668d70d04cdc1533883c23a0f065e61955ba6a', 'jacob.mid matches the C++ build'],
+    [toHex(sha256(makeSong(sha256(utf8('jacob')), true).midi)), '61229de5adb326b54ec7f452cc96f5c2286fdd4c45dcafa787e20a766047a2e2', 'jacob --band matches the C++ build'],
+  ];
+  const failed = checks.filter(([got, want]) => got !== want).map(([, , name]) => name);
+  const badge = $('selftest');
+  badge.classList.add(failed.length ? 'fail' : 'ok');
+  badge.lastChild.textContent = failed.length ? 'Self-test failed: ' + failed.join(', ') : 'Self-test passed: NIST vectors and the C++ build’s songs match';
+  badge.title = checks.map(([got, want, name]) => `${got === want ? 'pass' : 'FAIL'}  ${name}`).join('\n');
+  badge.dataset.result = failed.length ? 'fail' : 'pass';
+}
+
+renderSong();
+renderAvalanche();
+$('inside-text').value = state.text;
+renderInside();
+setTimeout(selfTest, 0);
+</script>
+</body>
+</html>

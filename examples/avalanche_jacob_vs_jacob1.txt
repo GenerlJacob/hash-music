@@ -1,0 +1,42 @@
+﻿Avalanche demo
+  A = "jacob"
+  B = "jacob1"
+  The inputs are 1 edit apart (counting characters inserted, deleted or replaced).
+
+SHA-256
+  A  c35d6aaf3b3885dfc9f36cddf48a65e93a919e13165fbbcfc0f9de5636279559
+  B  6740b27c9625034bdace8ed62215b93bd5994b65bfd2052025422569027506a4
+     ^^^^^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  62 of 64 hex digits differ (^)
+
+Bits that flipped (# = flipped, . = same; 4 bytes per row)
+  #.#..#.. ...###.# ##.##... ##.#..##
+  #.#.##.# ...###.# #....##. #..#.#..
+  ...#..## ..####.# ###...#. ....#.##
+  ##.#.##. #..##### ##.###.. ##.#..#.
+  ###.#### ....#... ##.#.#.# .###.##.
+  #.#.#..# #...##.# #.#####. ###.####
+  ###..#.# #.###.## #####.## ..######
+  ..##.#.. .#.#..#. #..#..## ######.#
+
+  146 of 256 bits differ (57.0%). An ideal hash flips each bit with probability 1/2: about 128, give or take 8.
+
+Melodies (pitch + rhythm of each note; * marks notes with the same pitch)
+  note 1     2     3     4     5     6     7     8
+  A    C6e   G4q.  A4q   G5h   D4q   D4q   D5e   D6h
+  B    A4q   E4e   A5e   C5q.  E5q   C4e   G3e   E4q
+
+  note 9     10    11    12    13    14    15    16
+  A    C6q   G6e   A4q.  D6q.  G6e   D5q   A4e   E6q
+  B    D6q   C6h   D5h   D6q   C4e   A3e   A5q   D4q
+                         *
+
+  note 17    18    19    20    21    22    23    24
+  A    D4q   E5e   E5h   A3e   A3q   G4h   A5q   C6h
+  B    D6e   E5q   E4q   A4e   A5h   D6e   G3e   C4e
+             *
+
+  Same pitch in 2 of 24 notes, same rhythm in 6 (chance alone gives about 1.5 and 7.5).
+  Tempo: A = 140 BPM, B = 91 BPM.
+
+Wrote compare_a.mid (A) and compare_b.mid (B). Play them back to back.

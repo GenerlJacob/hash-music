@@ -1,0 +1,25 @@
+﻿Input     "jacob" (5 bytes)
+SHA-256   c35d6aaf3b3885dfc9f36cddf48a65e93a919e13165fbbcfc0f9de5636279559
+
+Melody    each byte is two hex digits: the first picks the pitch, the second the rhythm
+          (e = eighth, q = quarter, q. = dotted quarter, h = half)
+  byte    c3   5d   6a   af   3b   38   85   df
+  pitch   C6   G4   A4   G5   D4   D4   D5   D6
+  rhythm  e    q.   q    h    q    q    e    h
+
+  byte    c9   f3   6c   dd   f4   8a   65   e9
+  pitch   C6   G6   A4   D6   G6   D5   A4   E6
+  rhythm  q    e    q.   q.   e    q    e    q
+
+  byte    3a   91   9e   13   16   5f   bb   cf
+  pitch   D4   E5   E5   A3   A3   G4   A5   C6
+  rhythm  q    e    h    e    q    h    q    h
+
+  ...then the home note C5 to finish
+
+Tempo     byte 24 = c0 -> 140 BPM
+Loudness  byte 25 = f9 -> velocity 99 (accents on beats 1 and 3)
+
+Wrote jacob.mid: 316 bytes, 1 instrument track, 14.1 seconds
+File fingerprint (SHA-256 of jacob.mid): d5033c0e1d2b157b08373fa4c5668d70d04cdc1533883c23a0f065e61955ba6a
+Run it again with the same input and both lines come out identical.
