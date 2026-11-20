@@ -1,7 +1,7 @@
 # Tests (task 10, Member D). Run them all with:  ctest --test-dir build --output-on-failure
 
 # Unit tests: one executable per module, sharing a tiny header-only harness (no downloads needed).
-foreach(name sha256 mapper midi_writer pipeline)
+foreach(name sha256 mapper midi_writer pipeline extras)
   add_executable(test_${name} test_${name}.cpp test_main.cpp)
   target_link_libraries(test_${name} PRIVATE hashmusic_core)
   add_test(NAME unit_${name} COMMAND test_${name})
@@ -15,6 +15,11 @@ target_link_libraries(sha256_batch PRIVATE hashmusic_core)
 add_test(NAME cli_determinism
          COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:hashmusic> -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/determinism
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/cli_determinism.cmake)
+
+# The newer modes from the command line: --verify exit codes, register/login with lockout, toy collisions.
+add_test(NAME cli_features
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:hashmusic> -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/features
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/cli_features.cmake)
 
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)

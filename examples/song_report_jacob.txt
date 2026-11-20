@@ -21,5 +21,7 @@ Tempo     byte 24 = c0 -> 140 BPM
 Loudness  byte 25 = f9 -> velocity 99 (accents on beats 1 and 3)
 
 Wrote jacob.mid: 316 bytes, 1 instrument track, 14.1 seconds
+Wrote jacob.svg: hash art, a picture drawn from the same 32 bytes
+Wrote jacob.wav: the song as audio
 File fingerprint (SHA-256 of jacob.mid): d5033c0e1d2b157b08373fa4c5668d70d04cdc1533883c23a0f065e61955ba6a
 Run it again with the same input and both lines come out identical.

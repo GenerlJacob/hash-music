@@ -3,9 +3,13 @@
 //
 // main reads the input, calls each module in order, and writes the .mid file:
 //   input bytes --sha256()--> 32-byte digest --map_digest()--> Song --write_midi()--> bytes --> song.mid
+// The other modes reuse that pipeline: a password's derived key, a mined hash or a toy hash also
+// becomes a song.
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <ctime>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -18,10 +22,13 @@
 
 #include "avalanche.h"
 #include "band.h"
+#include "extras.h"
 #include "mapper.h"
 #include "midi_writer.h"
+#include "password.h"
 #include "sha256.h"
 #include "stats.h"
+#include "toy_hash.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -42,32 +49,54 @@ using namespace hashmusic;
 
 const char* const kUsage = R"(hashmusic - hear what a SHA-256 hash sounds like
 
-Usage:
+Songs:
   hashmusic [options] <text...>          hash the text (words are joined with spaces), write its song
   hashmusic [options] --file <path>      hash a file's bytes and write its "theme song"
   hashmusic [options] --stdin            hash everything read from standard input
-  hashmusic [options] --compare <a> <b>  avalanche demo: compare two inputs bit by bit, write both songs
+
+Seeing what makes a good hash:
+  hashmusic --compare <a> <b>            avalanche demo: compare two inputs bit by bit, write both songs
+  hashmusic --sweep <text...>            flip one bit at every input position, count output bits that change
+  hashmusic --collide [text...]          two different inputs with the same toy hash (same song)
   hashmusic --stats [count]              hash random inputs, chart how evenly bytes and pitches spread
 
+Passwords, integrity and proof of work:
+  hashmusic --password <password|->      salted PBKDF2-SHA256 record for a password, and its song
+  hashmusic --register <user> <password|->   add a user to the password store
+  hashmusic --login <user> <password|->      check a login; wrong guesses lock the account
+  hashmusic --file <path> --verify <hex> check a file against a known SHA-256 (tamper detection)
+  hashmusic --mine <text...>             find a nonce whose hash starts with zeros (--difficulty)
+
 Options:
-  -o, --out <path>  output file (default song.mid). With --compare it is a prefix for
-                    <prefix>_a.mid and <prefix>_b.mid (default "compare"). With --stats it names
-                    the chart page (default distribution.html; a .csv is written beside it)
-  --band            add hash-chosen instruments, harmony, bass and drums
-  --hash-only       print the SHA-256 digest and stop
-  --seed <n>        random seed for --stats (default 2710)
-  -q, --quiet       with text, --file or --stdin: print only the digest and the output file name
-  -h, --help        show this help
+  -o, --out <path>     output file (default song.mid). With --compare and --collide it is a prefix
+                       for <prefix>_a.mid and <prefix>_b.mid. With --stats it names the chart page
+                       (default distribution.html; a .csv is written beside it)
+  --hash <sha256|toy>  the hash to use (default sha256); toy is a deliberately bad XOR hash
+  --band               add hash-chosen instruments, harmony, bass and drums
+  --art <file.svg>     also draw the hash as a picture
+  --wav <file.wav>     also render the song as audio
+  --hash-only          print the digest and stop
+  --seed <n>           random seed for --stats (default 2710)
+  --salt <hex>         salt for --password (default: 16 random bytes)
+  --iterations <n>     PBKDF2 iterations for --password and --register (default 600000)
+  --store <file>       password store for --register and --login (default users.txt)
+  --difficulty <n>     zero hex digits for --mine, 0-7 (default 4)
+  -q, --quiet          with text, --file or --stdin: print only the digest and the output file name
+  -h, --help           show this help
+
+A password given as - is read from standard input, which keeps it out of your shell history.
 
 Examples:
   hashmusic jacob
-  hashmusic jacob -o jacob.mid
+  hashmusic jacob -o jacob.mid --art jacob.svg --wav jacob.wav
   hashmusic --compare jacob jacob1
+  hashmusic --compare jacob jacob1 --hash toy
   hashmusic --band --file README.md -o readme_theme.mid
-  hashmusic --stats 10000
+  hashmusic --register alice - --store users.txt
+  hashmusic --mine jacob --difficulty 5
 )";
 
-enum class Mode { kText, kFile, kStdin, kCompare, kStats };
+enum class Mode { kText, kFile, kStdin, kCompare, kStats, kSweep, kCollide, kPassword, kRegister, kLogin, kMine };
 
 struct Options {
     Mode mode = Mode::kText;
@@ -76,10 +105,19 @@ struct Options {
     std::vector<std::string> positional;
     std::string out;
     std::string file;
+    HashKind hash = HashKind::kSha256;
+    bool hash_set = false;
     bool band = false;
     bool hash_only = false;
     bool quiet = false;
     std::uint64_t seed = 2710;
+    std::string art;
+    std::string wav;
+    std::string verify;  // expected SHA-256, lowercase hex
+    std::string salt;    // hex
+    std::uint32_t iterations = kDefaultIterations;
+    std::string store = "users.txt";
+    int difficulty = 4;
 };
 
 // Bad command-line usage: reported with a hint and exit code 2.
@@ -98,10 +136,17 @@ std::uint64_t parse_number(const std::string& text, const std::string& what) {
     }
 }
 
+bool is_hex(const std::string& text) {
+    return !text.empty() && text.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+}
+
 Options parse_args(const std::vector<std::string>& args) {
     Options o;
     const auto set_mode = [&o](Mode mode) {
-        if (o.mode_set && o.mode != mode) throw UsageError("use only one of --file, --stdin, --compare and --stats");
+        if (o.mode_set && o.mode != mode) {
+            throw UsageError("use only one of --file, --stdin, --compare, --stats, --sweep, --collide, --password, "
+                             "--register, --login and --mine");
+        }
         o.mode = mode;
         o.mode_set = true;
     };
@@ -129,12 +174,50 @@ Options parse_args(const std::vector<std::string>& args) {
             set_mode(Mode::kCompare);
         } else if (arg == "--stats") {
             set_mode(Mode::kStats);
+        } else if (arg == "--sweep") {
+            set_mode(Mode::kSweep);
+        } else if (arg == "--collide") {
+            set_mode(Mode::kCollide);
+        } else if (arg == "--password") {
+            set_mode(Mode::kPassword);
+        } else if (arg == "--register") {
+            set_mode(Mode::kRegister);
+        } else if (arg == "--login") {
+            set_mode(Mode::kLogin);
+        } else if (arg == "--mine") {
+            set_mode(Mode::kMine);
+        } else if (arg == "--hash") {
+            const std::string& name = value();
+            try {
+                o.hash = parse_hash_kind(name);
+            } catch (const std::invalid_argument& e) {
+                throw UsageError(e.what());
+            }
+            o.hash_set = true;
         } else if (arg == "--band") {
             o.band = true;
+        } else if (arg == "--art") {
+            o.art = value();
+        } else if (arg == "--wav") {
+            o.wav = value();
         } else if (arg == "--hash-only") {
             o.hash_only = true;
+        } else if (arg == "--verify") {
+            o.verify = value();
         } else if (arg == "--seed") {
             o.seed = parse_number(value(), "--seed");
+        } else if (arg == "--salt") {
+            o.salt = value();
+        } else if (arg == "--iterations") {
+            const std::uint64_t n = parse_number(value(), "--iterations");
+            if (n < 1 || n > 10000000) throw UsageError("--iterations must be between 1 and 10,000,000");
+            o.iterations = static_cast<std::uint32_t>(n);
+        } else if (arg == "--store") {
+            o.store = value();
+        } else if (arg == "--difficulty") {
+            const std::uint64_t n = parse_number(value(), "--difficulty");
+            if (n > 7) throw UsageError("--difficulty must be 0-7 (each step is 16 times more work)");
+            o.difficulty = static_cast<int>(n);
         } else if (arg == "-q" || arg == "--quiet") {
             o.quiet = true;
         } else {
@@ -143,6 +226,8 @@ Options parse_args(const std::vector<std::string>& args) {
     }
     if (o.help) return o;
 
+    const bool single = o.mode == Mode::kText || o.mode == Mode::kFile || o.mode == Mode::kStdin;
+    const bool one_song = single || o.mode == Mode::kPassword || o.mode == Mode::kMine;
     switch (o.mode) {
         case Mode::kText:
             if (o.positional.empty()) throw UsageError("give some text to hash, for example: hashmusic jacob");
@@ -157,9 +242,37 @@ Options parse_args(const std::vector<std::string>& args) {
         case Mode::kStats:
             if (o.positional.size() > 1) throw UsageError("--stats takes at most one number");
             break;
+        case Mode::kSweep:
+        case Mode::kMine:
+            if (o.positional.empty()) throw UsageError("this mode needs some text, e.g. --mine jacob");
+            break;
+        case Mode::kCollide:
+            break;
+        case Mode::kPassword:
+            if (o.positional.size() != 1) throw UsageError("--password needs one password (or - to read it from standard input)");
+            break;
+        case Mode::kRegister:
+        case Mode::kLogin:
+            if (o.positional.size() != 2) throw UsageError("--register and --login need a user name and a password (or -)");
+            break;
     }
-    if (o.hash_only && (o.mode == Mode::kCompare || o.mode == Mode::kStats)) {
-        throw UsageError("--hash-only works with text, --file or --stdin");
+    if (o.hash_only && !single) throw UsageError("--hash-only works with text, --file or --stdin");
+    if (o.hash == HashKind::kToy && !(single || o.mode == Mode::kCompare || o.mode == Mode::kStats || o.mode == Mode::kSweep)) {
+        throw UsageError("--hash toy works with text, --file, --stdin, --compare, --stats and --sweep");
+    }
+    if (!o.verify.empty()) {
+        if (!single) throw UsageError("--verify works with text, --file or --stdin");
+        if (o.hash != HashKind::kSha256) throw UsageError("--verify checks SHA-256 digests; leave out --hash toy");
+        if (o.verify.size() != 64 || !is_hex(o.verify)) throw UsageError("--verify needs a 64-digit hex SHA-256 digest");
+        std::transform(o.verify.begin(), o.verify.end(), o.verify.begin(),
+                       [](char c) { return static_cast<char>(c >= 'A' && c <= 'F' ? c - 'A' + 'a' : c); });
+    }
+    if ((!o.art.empty() || !o.wav.empty()) && !one_song) {
+        throw UsageError("--art and --wav work in modes that write one song: text, --file, --stdin, --password, --mine");
+    }
+    if (!o.salt.empty()) {
+        if (o.mode != Mode::kPassword) throw UsageError("--salt works with --password");
+        if (o.salt.size() % 2 != 0 || !is_hex(o.salt)) throw UsageError("--salt must be hex, e.g. 00112233445566778899aabbccddeeff");
     }
     return o;
 }
@@ -176,9 +289,9 @@ std::string with_commas(std::uint64_t n) {
     return out;
 }
 
-std::string fixed1(double value) {
-    char buffer[32];
-    std::snprintf(buffer, sizeof buffer, "%.1f", value);
+std::string fixed(double value, int places) {
+    char buffer[64];
+    std::snprintf(buffer, sizeof buffer, "%.*f", places, value);
     return buffer;
 }
 
@@ -194,6 +307,15 @@ std::string pad(std::string text, std::size_t width) {
 
 std::string rtrim(std::string text) {
     while (!text.empty() && text.back() == ' ') text.pop_back();
+    return text;
+}
+
+std::string join_words(const std::vector<std::string>& words) {
+    std::string text;
+    for (std::size_t i = 0; i < words.size(); ++i) {
+        if (i > 0) text += ' ';
+        text += words[i];
+    }
     return text;
 }
 
@@ -228,6 +350,10 @@ double song_seconds(const Song& song) {
     return static_cast<double>(song.length_ticks) / kTicksPerBeat * 60.0 / song.bpm;
 }
 
+double seconds_since(std::chrono::steady_clock::time_point start) {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
 std::string drum_options(const BandChoices& c) {
     std::string out;
     const auto add = [&out](bool on, const char* name) {
@@ -241,6 +367,8 @@ std::string drum_options(const BandChoices& c) {
     add(c.tambourine, "tambourine");
     return out.empty() ? "no extras" : out;
 }
+
+const char* digest_label(HashKind kind) { return kind == HashKind::kToy ? "Toy hash" : "SHA-256"; }
 
 // ---- The pipeline -------------------------------------------------------------------------------
 
@@ -261,6 +389,21 @@ void save_text(const std::string& path, const std::string& text) {
     save_file(path, std::vector<std::uint8_t>(text.begin(), text.end()));
 }
 
+struct Written {
+    Song song;
+    std::vector<std::uint8_t> midi;
+};
+
+// The .mid file, plus the picture and the audio when --art and --wav ask for them.
+Written write_outputs(const Digest& digest, const Options& o, const std::string& path) {
+    Written written;
+    written.song = make_song(digest, o.band);
+    written.midi = write_song(written.song, path);
+    if (!o.art.empty()) save_text(o.art, hash_art_svg(digest));
+    if (!o.wav.empty()) save_file(o.wav, render_wav(written.song));
+    return written;
+}
+
 struct Input {
     Digest digest{};
     std::string description;  // what was hashed, for the report
@@ -269,18 +412,14 @@ struct Input {
 Input read_input(const Options& o) {
     Input input;
     if (o.mode == Mode::kText) {
-        std::string text;
-        for (std::size_t i = 0; i < o.positional.size(); ++i) {
-            if (i > 0) text += ' ';
-            text += o.positional[i];
-        }
-        input.digest = sha256(text);
+        const std::string text = join_words(o.positional);
+        input.digest = hash_text(o.hash, text);
         input.description = "\"" + printable(text) + "\" (" + with_commas(text.size()) + " bytes)";
         return input;
     }
 
     // File and stdin modes hash a stream in 64 KiB pieces, so any size of input works.
-    Sha256 hasher;
+    AnyHasher hasher(o.hash);
     std::vector<char> buffer(1 << 16);
     std::uint64_t size = 0;
     std::string preview;
@@ -312,7 +451,7 @@ Input read_input(const Options& o) {
     return input;
 }
 
-// ---- Modes --------------------------------------------------------------------------------------
+// ---- Reports ------------------------------------------------------------------------------------
 
 void print_band(const Digest& digest) {
     const BandChoices c = band_choices(digest);
@@ -326,8 +465,8 @@ void print_band(const Digest& digest) {
               << drum_options(c) << "\n";
 }
 
-void print_song_report(const Digest& digest, const Song& song, bool band) {
-    std::cout << "SHA-256   " << to_hex(digest) << "\n\n";
+void print_song_report(const Digest& digest, const Song& song, bool band, const std::string& label) {
+    std::cout << pad(label, 10) << to_hex(digest) << "\n\n";
     std::cout << "Melody    each byte is two hex digits: the first picks the pitch, the second the rhythm\n"
               << "          (e = eighth, q = quarter, q. = dotted quarter, h = half)\n";
     for (std::size_t row = 0; row < kMelodyNotes / 8; ++row) {
@@ -348,45 +487,75 @@ void print_song_report(const Digest& digest, const Song& song, bool band) {
     if (band) print_band(digest);
 }
 
+void print_written(const std::string& path, const Written& written, const Options& o) {
+    std::cout << "\nWrote " << path << ": " << with_commas(written.midi.size()) << " bytes, " << written.song.tracks.size()
+              << (written.song.tracks.size() == 1 ? " instrument track, " : " instrument tracks, ")
+              << fixed(song_seconds(written.song), 1) << " seconds\n";
+    if (!o.art.empty()) std::cout << "Wrote " << o.art << ": hash art, a picture drawn from the same 32 bytes\n";
+    if (!o.wav.empty()) std::cout << "Wrote " << o.wav << ": the song as audio\n";
+    std::cout << "File fingerprint (SHA-256 of " << path << "): " << to_hex(sha256(written.midi)) << "\n"
+              << "Run it again with the same input and both lines come out identical.\n";
+}
+
+// Prints whether the digest matches the expected one; true when it does.
+bool check_integrity(const Digest& digest, const std::string& expected_hex) {
+    const std::vector<std::uint8_t> bytes = from_hex(expected_hex);
+    Digest expected{};
+    std::copy(bytes.begin(), bytes.end(), expected.begin());
+    const int bits = count_bit_differences(digest, expected);
+    if (bits == 0) {
+        std::cout << "Integrity MATCH: the SHA-256 equals the expected value, so the input is unchanged.\n";
+        return true;
+    }
+    std::cout << "Integrity MISMATCH: " << bits << " of 256 bits differ from the expected SHA-256.\n"
+              << "  expected " << expected_hex << "\n"
+              << "  actual   " << to_hex(digest) << "\n"
+              << "  The input was changed or corrupted.\n";
+    return false;
+}
+
+// ---- Modes --------------------------------------------------------------------------------------
+
 int run_single(const Options& o) {
     const Input input = read_input(o);
+    const auto verified = [&]() { return o.verify.empty() || check_integrity(input.digest, o.verify); };
     if (o.hash_only) {
         std::cout << to_hex(input.digest) << "\n";
-        return 0;
+        return verified() ? 0 : 1;
     }
     const std::string path = o.out.empty() ? "song.mid" : o.out;
-    const Song song = make_song(input.digest, o.band);
-    const std::vector<std::uint8_t> file = write_song(song, path);
-
+    const Written written = write_outputs(input.digest, o, path);
     if (o.quiet) {
         std::cout << to_hex(input.digest) << "\nwrote " << path << "\n";
-        return 0;
+        return verified() ? 0 : 1;
     }
     std::cout << "Input     " << input.description << "\n";
-    print_song_report(input.digest, song, o.band);
-    std::cout << "\nWrote " << path << ": " << with_commas(file.size()) << " bytes, " << song.tracks.size()
-              << (song.tracks.size() == 1 ? " instrument track, " : " instrument tracks, ") << fixed1(song_seconds(song))
-              << " seconds\n"
-              << "File fingerprint (SHA-256 of " << path << "): " << to_hex(sha256(file)) << "\n"
-              << "Run it again with the same input and both lines come out identical.\n";
-    return 0;
+    if (o.hash == HashKind::kToy) {
+        std::cout << "Hash      the toy XOR hash: short inputs show straight through, and one changed character\n"
+                  << "          changes one note. Compare with the SHA-256 song of the same input.\n";
+    }
+    print_song_report(input.digest, written.song, o.band, digest_label(o.hash));
+    print_written(path, written, o);
+    if (o.verify.empty()) return 0;
+    std::cout << "\n";
+    return verified() ? 0 : 1;
 }
 
 int run_compare(const Options& o) {
     const std::string& a = o.positional[0];
     const std::string& b = o.positional[1];
-    const Digest da = sha256(a);
-    const Digest db = sha256(b);
+    const Digest da = hash_text(o.hash, a);
+    const Digest db = hash_text(o.hash, b);
     const int bits = count_bit_differences(da, db);
 
-    std::cout << "Avalanche demo\n"
+    std::cout << "Avalanche demo" << (o.hash == HashKind::kToy ? " with the toy XOR hash\n" : "\n")
               << "  A = \"" << printable(a) << "\"\n"
               << "  B = \"" << printable(b) << "\"\n";
     const std::size_t edits = edit_distance(a, b);
     std::cout << "  The inputs are " << edits << (edits == 1 ? " edit" : " edits")
               << " apart (counting characters inserted, deleted or replaced).\n\n";
 
-    std::cout << "SHA-256\n"
+    std::cout << digest_label(o.hash) << "\n"
               << "  A  " << to_hex(da) << "\n"
               << "  B  " << to_hex(db) << "\n"
               << "     " << rtrim(hex_difference_marker(da, db)) << "\n"
@@ -395,8 +564,12 @@ int run_compare(const Options& o) {
     std::cout << "Bits that flipped (# = flipped, . = same; 4 bytes per row)\n";
     std::istringstream grid(bit_difference_grid(da, db));
     for (std::string line; std::getline(grid, line);) std::cout << "  " << line << "\n";
-    std::cout << "\n  " << bits << " of 256 bits differ (" << fixed1(100.0 * bits / 256.0) << "%). "
-              << "An ideal hash flips each bit with probability 1/2: about 128, give or take 8.\n\n";
+    std::cout << "\n  " << bits << " of 256 bits differ (" << fixed(100.0 * bits / 256.0, 1) << "%). "
+              << "An ideal hash flips each bit with probability 1/2: about 128, give or take 8.\n";
+    if (o.hash == HashKind::kToy) {
+        std::cout << "  The toy hash has no avalanche effect: the change stays where it happened.\n";
+    }
+    std::cout << "\n";
 
     const Song sa = make_song(da, o.band);
     const Song sb = make_song(db, o.band);
@@ -438,10 +611,174 @@ int run_compare(const Options& o) {
     return 0;
 }
 
+int run_sweep(const Options& o) {
+    const std::string text = join_words(o.positional);
+    if (text.size() > 200) throw UsageError("--sweep takes at most 200 bytes of text");
+    const std::vector<int> flips = avalanche_sweep(text, o.hash);
+    std::cout << "Avalanche sweep (" << hash_display_name(o.hash) << "): flip the lowest bit of each input byte in turn\n"
+              << "and count the output bits that change. An ideal hash changes about 128 of 256, wherever the\n"
+              << "change is.\n\n"
+              << "  byte  char  bits\n";
+    int total = 0;
+    int lowest = 256;
+    int highest = 0;
+    for (std::size_t i = 0; i < flips.size(); ++i) {
+        const auto c = static_cast<unsigned char>(text[i]);
+        const std::string shown = (c >= 0x21 && c < 0x7F) ? std::string(1, static_cast<char>(c)) : "0x" + hex_pair(c);
+        std::cout << "  " << pad(std::to_string(i + 1), 6) << pad(shown, 6) << pad(std::to_string(flips[i]), 5)
+                  << std::string(static_cast<std::size_t>((flips[i] + 3) / 4), '#') << "\n";
+        total += flips[i];
+        lowest = std::min(lowest, flips[i]);
+        highest = std::max(highest, flips[i]);
+    }
+    std::cout << "\n  Average " << fixed(static_cast<double>(total) / static_cast<double>(flips.size()), 1)
+              << " bits (lowest " << lowest << ", highest " << highest << ") over " << flips.size() << " positions.\n";
+    return 0;
+}
+
+int run_collide(const Options& o) {
+    const std::string base = o.positional.empty() ? std::string("Bubble Sort Bandits") : join_words(o.positional);
+    const std::pair<std::string, std::string> pair = make_toy_collision(base);
+    const std::string& a = pair.first;
+    const std::string& b = pair.second;
+    const Digest toy_a = toy_hash(a);
+    const Digest toy_b = toy_hash(b);
+    const Digest sha_a = sha256(a);
+    const Digest sha_b = sha256(b);
+
+    std::cout << "A hash collision: two different inputs, one toy hash\n"
+              << "  A = \"" << printable(a, 80) << "\"\n"
+              << "  B = \"" << printable(b, 80) << "\"   (characters 1 and 33 swapped)\n\n"
+              << "Toy hash\n"
+              << "  A  " << to_hex(toy_a) << "\n"
+              << "  B  " << to_hex(toy_b) << "\n"
+              << (toy_a == toy_b ? "  Identical. Found instantly, because each digest byte only XORs input bytes\n"
+                                   "  32 apart, and XOR does not care about order.\n\n"
+                                 : "  Different (unexpected).\n\n")
+              << "SHA-256\n"
+              << "  A  " << to_hex(sha_a) << "\n"
+              << "  B  " << to_hex(sha_b) << "\n"
+              << "  " << count_bit_differences(sha_a, sha_b) << " of 256 bits differ. Finding a SHA-256 collision by\n"
+              << "  brute force would take about 2^128 tries.\n\n";
+
+    std::string prefix = o.out.empty() ? "collision" : o.out;
+    if (prefix.size() > 4 && prefix.compare(prefix.size() - 4, 4, ".mid") == 0) prefix.resize(prefix.size() - 4);
+    const std::string path_a = prefix + "_a.mid";
+    const std::string path_b = prefix + "_b.mid";
+    const std::vector<std::uint8_t> file_a = write_song(make_song(toy_a, o.band), path_a);
+    const std::vector<std::uint8_t> file_b = write_song(make_song(toy_b, o.band), path_b);
+    std::cout << "Wrote " << path_a << " and " << path_b << " from the toy hash: "
+              << (file_a == file_b ? "byte-identical files, the same song for two different inputs.\n"
+                                   : "different files.\n");
+    return 0;
+}
+
+// The password argument, or a line from standard input when it is "-".
+std::string password_argument(const std::string& argument) {
+    std::string password = argument;
+    if (argument == "-") {
+        if (!std::getline(std::cin, password)) password.clear();
+        if (!password.empty() && password.back() == '\r') password.pop_back();
+    }
+    if (password.empty()) throw UsageError("the password must not be empty");
+    return password;
+}
+
+int run_password(const Options& o) {
+    const std::string password = password_argument(o.positional[0]);
+    const std::vector<std::uint8_t> salt = o.salt.empty() ? random_salt() : from_hex(o.salt);
+    const auto start = std::chrono::steady_clock::now();
+    const PasswordRecord record = make_record(password, salt, o.iterations);
+    const double seconds = seconds_since(start);
+
+    const std::string path = o.out.empty() ? "song.mid" : o.out;
+    const Written written = write_outputs(record.key, o, path);
+    if (o.quiet) {
+        std::cout << format_record(record) << "\nwrote " << path << "\n";
+        return 0;
+    }
+    std::cout << "Password  (hidden; it is never stored)\n"
+              << "Salt      " << bytes_to_hex(salt) << (o.salt.empty() ? "  (16 random bytes)\n" : "  (given)\n")
+              << "PBKDF2    " << with_commas(o.iterations) << " rounds of HMAC-SHA256 in " << fixed(seconds, 2)
+              << " s: every guess costs an attacker the same\n"
+              << "Record    " << format_record(record) << "\n\n"
+              << "The song comes from the stored key. Run this again without --salt and the same password gets a\n"
+              << "new salt, a new record and a different song, so equal passwords never look equal.\n\n";
+    print_song_report(record.key, written.song, o.band, "Key");
+    print_written(path, written, o);
+    return 0;
+}
+
+int run_register(const Options& o) {
+    const std::string& user = o.positional[0];
+    const std::string password = password_argument(o.positional[1]);
+    PasswordStore store;
+    store.load(o.store);
+    store.add_user(user, make_record(password, random_salt(), o.iterations));
+    store.save(o.store);
+    std::cout << "Registered " << user << " in " << o.store << ": a random salt and " << with_commas(o.iterations)
+              << " rounds of PBKDF2-SHA256.\nThe store keeps only the salt and the derived key, never the password.\n";
+    return 0;
+}
+
+int run_login(const Options& o) {
+    const std::string& user = o.positional[0];
+    const std::string password = password_argument(o.positional[1]);
+    PasswordStore store;
+    store.load(o.store);
+    const PasswordStore::Attempt attempt = store.login(user, password, static_cast<long long>(std::time(nullptr)));
+    store.save(o.store);
+    switch (attempt.result) {
+        case PasswordStore::Result::kOk:
+            std::cout << "Login OK: welcome, " << user << ".\n";
+            return 0;
+        case PasswordStore::Result::kLocked:
+            std::cout << "Account locked: try again in " << attempt.wait_seconds << " s. The password was not even checked.\n";
+            return 1;
+        case PasswordStore::Result::kNoSuchUser:
+            std::cout << "Login failed: wrong user name or password.\n";
+            return 1;
+        case PasswordStore::Result::kWrongPassword:
+            // A real site would not say which part was wrong; the counter is shown so the lockout can be demonstrated.
+            std::cout << "Login failed: wrong user name or password (" << attempt.failures << " wrong in a row).\n";
+            if (attempt.wait_seconds > 0) {
+                std::cout << "Too many wrong guesses: the account is locked for " << attempt.wait_seconds
+                          << " s, and each further wrong guess doubles that.\n";
+            } else {
+                std::cout << (PasswordStore::kFreeAttempts - attempt.failures)
+                          << " more wrong guesses before the account locks.\n";
+            }
+            return 1;
+    }
+    return 1;
+}
+
+int run_mine(const Options& o) {
+    const std::string text = join_words(o.positional);
+    const auto start = std::chrono::steady_clock::now();
+    const MineResult result = mine(text, o.difficulty, std::uint64_t{1} << 40);
+    const double seconds = seconds_since(start);
+    if (!result.found) throw std::runtime_error("gave up before finding a nonce");
+
+    std::uint64_t expected = 1;
+    for (int i = 0; i < o.difficulty; ++i) expected *= 16;
+    const std::string path = o.out.empty() ? "song.mid" : o.out;
+    const Written written = write_outputs(result.digest, o, path);
+    std::cout << "Mined     \"" << printable(result.input) << "\" after " << with_commas(result.attempts) << " tries in "
+              << fixed(seconds, 2) << " s (" << with_commas(static_cast<std::uint64_t>(result.attempts / std::max(seconds, 1e-6)))
+              << " hashes per second)\n"
+              << "Target    the first " << o.difficulty << " hex digits of the SHA-256 must be 0: about "
+              << with_commas(expected) << " tries on average, while checking the answer takes one.\n"
+              << "          Blockchains use the same puzzle as proof of work.\n\n";
+    print_song_report(result.digest, written.song, o.band, "SHA-256");
+    print_written(path, written, o);
+    return 0;
+}
+
 int run_stats(const Options& o) {
     const std::uint64_t count = o.positional.empty() ? 10000 : parse_number(o.positional[0], "--stats count");
     if (count < 1 || count > 10000000) throw UsageError("--stats count must be between 1 and 10,000,000");
-    const Distribution d = measure_distribution(count, o.seed);
+    const Distribution d = measure_distribution(count, o.seed, o.hash);
     std::cout << distribution_text(d);
 
     const std::string html_path = o.out.empty() ? "distribution.html" : o.out;
@@ -460,6 +797,12 @@ int run(const Options& o) {
     switch (o.mode) {
         case Mode::kCompare: return run_compare(o);
         case Mode::kStats: return run_stats(o);
+        case Mode::kSweep: return run_sweep(o);
+        case Mode::kCollide: return run_collide(o);
+        case Mode::kPassword: return run_password(o);
+        case Mode::kRegister: return run_register(o);
+        case Mode::kLogin: return run_login(o);
+        case Mode::kMine: return run_mine(o);
         default: return run_single(o);
     }
 }

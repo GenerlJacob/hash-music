@@ -1,0 +1,29 @@
+﻿Mined     "jacob#1442049" after 1,442,050 tries in 0.35 s (4,083,720 hashes per second)
+Target    the first 5 hex digits of the SHA-256 must be 0: about 1,048,576 tries on average, while checking the answer takes one.
+          Blockchains use the same puzzle as proof of work.
+
+SHA-256   0000082f81746dc7b1634bc25e7c9e78fcd9a7c892eec7d956320020919b5276
+
+Melody    each byte is two hex digits: the first picks the pitch, the second the rhythm
+          (e = eighth, q = quarter, q. = dotted quarter, h = half)
+  byte    00   00   08   2f   81   74   6d   c7
+  pitch   G3   G3   G3   C4   D5   C5   A4   C6
+  rhythm  e    e    q    h    e    e    q.   q
+
+  byte    b1   63   4b   c2   5e   7c   9e   78
+  pitch   A5   A4   E4   C6   G4   C5   E5   C5
+  rhythm  e    e    q    e    h    q.   h    q
+
+  byte    fc   d9   a7   c8   92   ee   c7   d9
+  pitch   G6   D6   G5   C6   E5   E6   C6   D6
+  rhythm  q.   q    q    q    e    h    q    q
+
+  ...then the home note C5 to finish
+
+Tempo     byte 24 = 56 -> 106 BPM
+Loudness  byte 25 = 32 -> velocity 67 (accents on beats 1 and 3)
+
+Wrote mined_jacob.mid: 316 bytes, 1 instrument track, 16.4 seconds
+Wrote mined_jacob.svg: hash art, a picture drawn from the same 32 bytes
+File fingerprint (SHA-256 of mined_jacob.mid): 3235e46d226d7dd7a2a06661a5b3f1f7adad4e5f986b8a6fdc00a59bcf80fbaa
+Run it again with the same input and both lines come out identical.

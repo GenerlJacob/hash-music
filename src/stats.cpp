@@ -305,8 +305,9 @@ std::string tile(const std::string& label, const std::string& value, const std::
 
 }  // namespace
 
-Distribution measure_distribution(std::uint64_t inputs, std::uint64_t seed) {
+Distribution measure_distribution(std::uint64_t inputs, std::uint64_t seed, HashKind kind) {
     Distribution d;
+    d.hash = kind;
     d.inputs = inputs;
     d.seed = seed;
     std::mt19937_64 rng(seed);
@@ -318,7 +319,7 @@ Distribution measure_distribution(std::uint64_t inputs, std::uint64_t seed) {
         // above normal in an early version, even though SHA-256 itself was fine.
         text.assign(8 + static_cast<std::size_t>(rng() % 17), ' ');
         for (char& c : text) c = static_cast<char>('a' + rng() % 26);
-        const Digest digest = sha256(text);
+        const Digest digest = hash_text(kind, text);
         for (std::size_t b = 0; b < digest.size(); ++b) {
             ++d.byte_counts[digest[b]];
             if (b < kMelodyNotes) {
@@ -336,8 +337,8 @@ std::string distribution_text(const Distribution& d) {
     const double pitch_chi = chi_square(d.pitch_counts);
     const double byte_chi = chi_square(d.byte_counts);
     std::ostringstream out;
-    out << "Distribution check: " << with_commas(d.inputs) << " random inputs (lowercase strings of 8-24 letters, seed "
-        << d.seed << ")\n\n";
+    out << "Distribution check (" << hash_display_name(d.hash) << "): " << with_commas(d.inputs)
+        << " random inputs (lowercase strings of 8-24 letters, seed " << d.seed << ")\n\n";
 
     out << "Melody pitches (first hex digit of bytes 0-23): " << with_commas(notes) << " notes, "
         << with_commas(static_cast<std::uint64_t>(std::llround(expectation(notes, 16).count)))
@@ -411,10 +412,10 @@ std::string distribution_html(const Distribution& d) {
       << "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
       << "<title>SHA-256 distribution</title>\n<style>" << kPageStyle << "</style>\n</head>\n<body>\n<main>\n";
 
-    h << "<h1>Is SHA-256&rsquo;s output evenly spread?</h1>\n"
+    h << "<h1>Is " << (d.hash == HashKind::kToy ? "the toy XOR hash" : "SHA-256") << "&rsquo;s output evenly spread?</h1>\n"
       << "<p class=\"lede\">We hashed " << with_commas(d.inputs)
       << " random inputs (lowercase strings of 8&ndash;24 letters, seed " << d.seed
-      << ") with our own SHA-256. If the output is uniform, every pitch and every byte value turns up about equally "
+      << ") with our own " << hash_display_name(d.hash) << ". If the output is uniform, every pitch and every byte value turns up about equally "
          "often, so the columns in each chart should be level, wobbling only inside the shaded band.</p>\n";
 
     h << "<div class=\"tiles\">\n"

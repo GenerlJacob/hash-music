@@ -32,6 +32,9 @@ add_library(hashmusic_core STATIC
   src/avalanche.cpp    # Member A: stretch goal, the avalanche comparison
   src/band.cpp         # extra from the proposal: instruments, harmony, bass, drums
   src/stats.cpp        # extra from the proposal: distribution charts
+  src/toy_hash.cpp     # a deliberately bad hash, for contrast with SHA-256
+  src/password.cpp     # course idea #1: salted PBKDF2 password storage with lockout
+  src/extras.cpp       # course ideas #16 and #19 (proof of work, hash art), avalanche sweep, WAV export
 )
 target_include_directories(hashmusic_core PUBLIC src)
 

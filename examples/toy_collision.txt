@@ -1,0 +1,17 @@
+﻿A hash collision: two different inputs, one toy hash
+  A = "Bubble Sort Bandits.............."
+  B = ".ubble Sort Bandits.............B"   (characters 1 and 33 swapped)
+
+Toy hash
+  A  6c7562626c6520536f72742042616e646974732e2e2e2e2e2e2e2e2e2e2e2e2e
+  B  6c7562626c6520536f72742042616e646974732e2e2e2e2e2e2e2e2e2e2e2e2e
+  Identical. Found instantly, because each digest byte only XORs input bytes
+  32 apart, and XOR does not care about order.
+
+SHA-256
+  A  ed2eb0f85289e6c410edcb38b84d7ff7ef3e1d1f59a9417f23267e1044a1d766
+  B  2f02420d2ba1cdc574b0fb0856ce0d4fed0d82c259379bfed49071a50099e1d0
+  122 of 256 bits differ. Finding a SHA-256 collision by
+  brute force would take about 2^128 tries.
+
+Wrote collision_a.mid and collision_b.mid from the toy hash: byte-identical files, the same song for two different inputs.

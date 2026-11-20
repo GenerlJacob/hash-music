@@ -40,8 +40,10 @@ reader we wrote in Python and opens in Windows' built-in MIDI sequencer.
 
 ## CLI, build and tests (Member D)
 
-`hashmusic` takes text, a file or standard input; CMake builds it, and `ctest` runs eight checks:
-39 unit test cases in four test programs plus four integration checks. All of the plan's correctness
+`hashmusic` takes text, a file or standard input; CMake builds it, and `ctest` runs ten checks:
+55 unit tests in five test programs plus five end-to-end checks. GitHub Actions runs them with GCC,
+Clang and Visual Studio on every push, and a browser version of the tool (`demo/live_demo.html`, a
+JavaScript port) checks itself against the C++ build when it loads. All of the plan's correctness
 checks pass: known vectors, the 1,000-input cross-check, determinism (two runs of the CLI write
 byte-identical files, and the demo songs' fingerprints are pinned so every machine must agree) and
 playback.
@@ -68,6 +70,15 @@ chi-square 237.3 (255 ± 22.6). The first version of `--stats` scored 378, which
 hash. The cause was that it allowed 1-letter inputs, and 5% of inputs repeated; since hashing is
 deterministic, each repeat added identical bytes. Requiring 8+ letters fixed it: determinism, seen from
 the other side.
+
+Four more ideas came from the course's project list. Passwords (#1) are stored as a random salt plus
+600,000 rounds of PBKDF2-HMAC-SHA256 built on our SHA-256 (it matches RFC 4231 and published PBKDF2
+values), and three wrong guesses lock an account. In the demo, a table of 40 common passwords cracks
+4 of 6 plain SHA-256 users and none of the salted ones. `--verify` checks a file against a known hash
+(#5), `--mine` solves a proof-of-work puzzle (#16: five zero digits took 1.4 million tries), and `--art`
+draws a hash as a picture (#19). For contrast, `--hash toy` swaps in a deliberately bad XOR hash: one
+extra character flips 3 bits instead of 146, two swapped letters collide instantly, and its byte
+chi-square is about 21 million.
 
 **Limits.** The tool is for understanding, not security. A song reveals about 150 of the digest's 256
 bits, so it should never be made from a real password.

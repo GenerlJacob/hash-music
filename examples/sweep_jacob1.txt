@@ -1,0 +1,13 @@
+﻿Avalanche sweep (SHA-256): flip the lowest bit of each input byte in turn
+and count the output bits that change. An ideal hash changes about 128 of 256, wherever the
+change is.
+
+  byte  char  bits
+  1     j     126  ################################
+  2     a     134  ##################################
+  3     c     144  ####################################
+  4     o     120  ##############################
+  5     b     139  ###################################
+  6     1     120  ##############################
+
+  Average 130.5 bits (lowest 120, highest 144) over 6 positions.

@@ -7,9 +7,12 @@
 #include <cstdint>
 #include <string>
 
+#include "toy_hash.h"
+
 namespace hashmusic {
 
 struct Distribution {
+    HashKind hash = HashKind::kSha256;
     std::uint64_t inputs = 0;  // how many random inputs were hashed
     std::uint64_t seed = 0;
     std::array<std::uint64_t, 256> byte_counts{};   // every digest byte (32 per input)
@@ -19,7 +22,8 @@ struct Distribution {
 
 // Hashes `inputs` random lowercase strings of 8-24 letters and tallies the digests. The strings come
 // from std::mt19937_64, whose output the C++ standard fixes, so a seed gives the same counts everywhere.
-Distribution measure_distribution(std::uint64_t inputs, std::uint64_t seed);
+// With HashKind::kToy the counts pile up on the byte values of letters: what a bad hash looks like.
+Distribution measure_distribution(std::uint64_t inputs, std::uint64_t seed, HashKind kind = HashKind::kSha256);
 
 // Pearson's chi-square statistic of the counts against a uniform distribution. For uniform data it
 // lands near (bins - 1), give or take sqrt(2 * (bins - 1)); far above that means some bins are favored.

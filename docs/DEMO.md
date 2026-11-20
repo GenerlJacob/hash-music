@@ -2,7 +2,7 @@
 
 **Browser version.** If the terminal is awkward on the projector, run the same script in
 [demo/live_demo.html](../demo/live_demo.html): tab 1 for steps b and c (type `jacob`, press Enter; the
-Determinism table shows matching fingerprints), tab 2 for step d, and tabs 3 and 4 if questions turn
+Determinism table shows matching fingerprints), tab 2 for step d, and tabs 3 and 6 if questions turn
 to how SHA-256 works or whether its output is uniform. Ask the audience for inputs to type. Check that
 the badge at the top right says "Self-test passed" before you start.
 
@@ -61,8 +61,20 @@ hashmusic --compare jacob jacob1
 > one half, so about 128. The grid shows the flips are spread everywhere, not bunched near the end where
 > the change was. Only 2 of the 24 notes kept their pitch, which is what chance alone predicts.
 
-If there is time, play `examples\jacob_band.mid` (the `--band` version) or open
-`examples\distribution.html` to show that across 10,000 random inputs every pitch comes up equally often.
+If there is time, pick one:
+
+- **A bad hash** (30 s): `hashmusic --compare jacob jacob1 --hash toy`, or the Toy hash switch in the
+  demo page. "With a weak hash, one character flips 3 bits instead of 146, and only one note changes."
+- **Passwords** (1 min): in the demo page's Passwords tab, press "Run the attack". "Plain SHA-256: four
+  of six passwords cracked instantly. Salted and slowed down: none."
+- **Mining** (30 s): the Mining tab with 4 zeros. "About 65,000 tries to find; one hash to check."
+- **The band**: play `examples\jacob_band.mid`, the `--band` version.
+
+## Audience participation (optional, 1 minute)
+
+Show the last slide's QR code (it opens the demo on GitHub Pages, so switch Pages on first). Ask
+everyone to type their own name and press Play: two people with the same name get the identical song,
+and anyone who changes one letter gets a completely different one.
 
 ## e. Questions (1 minute)
 
@@ -83,5 +95,9 @@ Each owner answers for their module. Likely questions:
   byte, and they pin the demo songs' fingerprints so every computer must produce the same bytes.
 - **Could two inputs give the same song?** In principle yes, since a song carries about 150 bits of the
   hash. Finding such a pair would take around 2^75 tries, far beyond any computer.
+- **Why not store SHA-256 of a password?** It is too fast and unsalted: an attacker hashes common
+  passwords once and looks every user up in that table, and two users with the same password store the
+  same hash. Our `--register` adds a random salt and 600,000 rounds of PBKDF2, so each guess is slow and
+  has to be made separately for every user.
 - **Is this secure?** No; it is a teaching tool. A song reveals most of its hash, which is why real
   systems store passwords with a salt and a slow hash such as bcrypt, not plain SHA-256.

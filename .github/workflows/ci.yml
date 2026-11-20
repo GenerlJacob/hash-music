@@ -1,0 +1,47 @@
+# Builds the project and runs every check (ctest) with four compilers on every push and pull request,
+# so a change that breaks the build or a test shows a red X before anyone merges it.
+name: build-and-test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux, GCC
+            os: ubuntu-latest
+            cxx: g++
+          - name: Linux, Clang
+            os: ubuntu-latest
+            cxx: clang++
+          - name: macOS, Apple Clang
+            os: macos-latest
+            cxx: clang++
+          - name: Windows, Visual Studio
+            os: windows-latest
+            cxx: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      # Python runs the hashlib cross-check, the mapping cross-check and the MIDI playback check.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Configure
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.cxx }}" ]; then export CXX="${{ matrix.cxx }}"; fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
