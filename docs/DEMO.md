@@ -72,9 +72,10 @@ If there is time, pick one:
 
 ## Audience participation (optional, 1 minute)
 
-Show the last slide's QR code (it opens the demo on GitHub Pages, so switch Pages on first). Ask
-everyone to type their own name and press Play: two people with the same name get the identical song,
-and anyone who changes one letter gets a completely different one.
+Show the QR code: the deck's last slide, or the **Try it on your phone** button at the top of the demo
+page (open `demo/live_demo.html#qr` to start with it already showing). It opens the demo on GitHub
+Pages, so switch Pages on first. Ask everyone to type their own name and press Play: two people with
+the same name get the identical song, and anyone who changes one letter gets a completely different one.
 
 ## e. Questions (1 minute)
 

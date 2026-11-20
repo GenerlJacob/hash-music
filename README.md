@@ -19,7 +19,8 @@ hashmusic --compare jacob jacob1       # see which of the 256 hash bits flipped
 
 **Try it in a browser:** [generljacob.github.io/hash-music](https://generljacob.github.io/hash-music/)
 (the live demo page, [demo/live_demo.html](demo/live_demo.html); it also works offline from a copy of
-this folder).
+this folder). Its **Try it on your phone** button shows a QR code to that address for an audience to
+scan; `live_demo.html#qr` opens the page with the QR code already showing.
 
 ## Build
 

@@ -65,6 +65,30 @@ header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; jus
            padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; font-size: 15px; }
 .callout[hidden] { display: none; }
 
+/* "Try it on your phone": the deck's last slide, sized for a projector */
+.share-dialog { border: 0; border-radius: 16px; padding: 0; width: min(920px, calc(100vw - 32px));
+                background: var(--surface); color: var(--ink); box-shadow: 0 24px 64px rgba(0,0,0,.35); }
+.share-dialog::backdrop { background: rgba(8, 10, 18, 0.72); }
+.share-body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 32px; align-items: center; padding: 32px; }
+.qr-panel { background: #ffffff; border-radius: 14px; overflow: hidden; line-height: 0; }
+.qr-panel svg { width: min(400px, 72vw, 58vh); height: auto; }
+.share-eyebrow { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 14px; letter-spacing: .12em;
+                 text-transform: uppercase; color: var(--s1); }
+.share-title { font-size: 32px; line-height: 1.2; margin: 6px 0 12px; font-weight: 650; }
+.share-url { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 20px; color: var(--s1); overflow-wrap: anywhere; }
+.share-steps { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 14px; font-size: 21px; line-height: 1.35; }
+.share-steps li { display: flex; gap: 14px; align-items: flex-start; }
+.share-steps .n { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--s1); color: var(--on-accent);
+                  font-weight: 700; font-size: 17px; display: inline-flex; align-items: center; justify-content: center; }
+.share-note { color: var(--ink-2); font-size: 15px; margin: 18px 0 0; }
+.share-close { position: absolute; top: 12px; right: 12px; }
+@media (max-width: 720px) {
+  .share-body { grid-template-columns: minmax(0, 1fr); justify-items: center; padding: 52px 20px 24px; }
+  .share-title { font-size: 24px; }
+  .share-url { font-size: 16px; }
+  .share-steps { font-size: 18px; }
+}
+
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--grid); margin-bottom: 16px; }
 .tab { appearance: none; border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 16px;
        padding: 10px 14px; border-bottom: 3px solid transparent; cursor: pointer; margin-bottom: -1px; }
@@ -230,6 +254,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 14px; margin-
       <div class="sub">Bubble Sort Bandits &middot; CSC 2710 &middot; hear SHA-256, written from scratch</div>
     </div>
     <div class="header-right">
+      <button class="btn" id="share-open" aria-haspopup="dialog">Try it on your phone</button>
       <div class="seg" role="group" aria-label="Hash function">
         <button id="hash-sha" aria-pressed="true">SHA-256</button>
         <button id="hash-toy" aria-pressed="false">Toy hash (bad)</button>
@@ -500,6 +525,28 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 14px; margin-
     <div id="dist-out"></div>
   </section>
 </main>
+
+<!-- The deck's last slide: a QR code that opens this page on GitHub Pages (the same address and
+     error-correction level as the slide's image, drawn as SVG so it works offline at any size). -->
+<dialog class="share-dialog" id="share" aria-labelledby="share-title">
+  <form method="dialog"><button class="btn small share-close">Close</button></form>
+  <div class="share-body">
+    <div class="qr-panel" role="img" aria-label="QR code that opens generljacob.github.io/hash-music">
+      <svg viewBox="0 0 37 37" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" aria-hidden="true"><rect width="37" height="37" fill="#ffffff"/><path fill="#0b0b0b" d="M4 4h7v1h-7zM16 4h1v1h-1zM19 4h1v1h-1zM23 4h1v1h-1zM26 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM15 5h2v1h-2zM18 5h2v1h-2zM21 5h2v1h-2zM24 5h1v1h-1zM26 5h1v1h-1zM32 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM14 6h3v1h-3zM18 6h1v1h-1zM21 6h2v1h-2zM26 6h1v1h-1zM28 6h3v1h-3zM32 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM13 7h2v1h-2zM16 7h1v1h-1zM18 7h1v1h-1zM22 7h1v1h-1zM26 7h1v1h-1zM28 7h3v1h-3zM32 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM14 8h1v1h-1zM17 8h1v1h-1zM19 8h4v1h-4zM26 8h1v1h-1zM28 8h3v1h-3zM32 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM12 9h1v1h-1zM14 9h3v1h-3zM18 9h3v1h-3zM23 9h1v1h-1zM26 9h1v1h-1zM32 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h7v1h-7zM14 11h1v1h-1zM18 11h2v1h-2zM21 11h1v1h-1zM23 11h2v1h-2zM4 12h1v1h-1zM7 12h1v1h-1zM9 12h2v1h-2zM12 12h2v1h-2zM17 12h4v1h-4zM25 12h1v1h-1zM27 12h1v1h-1zM5 13h1v1h-1zM7 13h1v1h-1zM9 13h1v1h-1zM14 13h3v1h-3zM21 13h2v1h-2zM24 13h1v1h-1zM26 13h1v1h-1zM29 13h1v1h-1zM32 13h1v1h-1zM6 14h6v1h-6zM13 14h1v1h-1zM15 14h1v1h-1zM17 14h2v1h-2zM23 14h2v1h-2zM27 14h5v1h-5zM4 15h3v1h-3zM12 15h2v1h-2zM17 15h1v1h-1zM19 15h1v1h-1zM22 15h1v1h-1zM25 15h3v1h-3zM30 15h2v1h-2zM10 16h1v1h-1zM12 16h1v1h-1zM16 16h2v1h-2zM19 16h3v1h-3zM23 16h4v1h-4zM29 16h1v1h-1zM31 16h2v1h-2zM5 17h2v1h-2zM9 17h1v1h-1zM13 17h1v1h-1zM16 17h1v1h-1zM21 17h1v1h-1zM23 17h1v1h-1zM25 17h1v1h-1zM7 18h4v1h-4zM13 18h1v1h-1zM16 18h2v1h-2zM22 18h1v1h-1zM25 18h1v1h-1zM27 18h1v1h-1zM29 18h4v1h-4zM5 19h3v1h-3zM9 19h1v1h-1zM11 19h1v1h-1zM15 19h1v1h-1zM17 19h2v1h-2zM21 19h1v1h-1zM25 19h1v1h-1zM28 19h2v1h-2zM31 19h1v1h-1zM4 20h5v1h-5zM10 20h1v1h-1zM12 20h4v1h-4zM18 20h1v1h-1zM20 20h6v1h-6zM31 20h1v1h-1zM5 21h2v1h-2zM9 21h1v1h-1zM11 21h3v1h-3zM15 21h1v1h-1zM18 21h1v1h-1zM20 21h2v1h-2zM25 21h3v1h-3zM29 21h1v1h-1zM32 21h1v1h-1zM4 22h1v1h-1zM6 22h1v1h-1zM9 22h2v1h-2zM12 22h1v1h-1zM14 22h2v1h-2zM17 22h1v1h-1zM21 22h1v1h-1zM27 22h2v1h-2zM31 22h2v1h-2zM7 23h1v1h-1zM15 23h2v1h-2zM18 23h4v1h-4zM23 23h3v1h-3zM31 23h2v1h-2zM4 24h1v1h-1zM6 24h2v1h-2zM9 24h2v1h-2zM13 24h2v1h-2zM20 24h1v1h-1zM23 24h6v1h-6zM30 24h1v1h-1zM12 25h5v1h-5zM20 25h1v1h-1zM23 25h2v1h-2zM28 25h1v1h-1zM30 25h3v1h-3zM4 26h7v1h-7zM15 26h2v1h-2zM22 26h1v1h-1zM24 26h1v1h-1zM26 26h1v1h-1zM28 26h1v1h-1zM31 26h1v1h-1zM4 27h1v1h-1zM10 27h1v1h-1zM12 27h1v1h-1zM16 27h1v1h-1zM18 27h2v1h-2zM22 27h1v1h-1zM24 27h1v1h-1zM28 27h3v1h-3zM4 28h1v1h-1zM6 28h3v1h-3zM10 28h1v1h-1zM13 28h1v1h-1zM16 28h1v1h-1zM19 28h3v1h-3zM24 28h5v1h-5zM4 29h1v1h-1zM6 29h3v1h-3zM10 29h1v1h-1zM12 29h3v1h-3zM16 29h2v1h-2zM23 29h2v1h-2zM26 29h6v1h-6zM4 30h1v1h-1zM6 30h3v1h-3zM10 30h1v1h-1zM15 30h2v1h-2zM28 30h3v1h-3zM32 30h1v1h-1zM4 31h1v1h-1zM10 31h1v1h-1zM13 31h2v1h-2zM16 31h3v1h-3zM20 31h6v1h-6zM28 31h1v1h-1zM31 31h1v1h-1zM4 32h7v1h-7zM12 32h1v1h-1zM15 32h2v1h-2zM18 32h2v1h-2zM21 32h2v1h-2zM24 32h2v1h-2zM27 32h3v1h-3zM31 32h1v1h-1z"/></svg>
+    </div>
+    <div>
+      <div class="share-eyebrow">Try it on your phone</div>
+      <h2 class="share-title" id="share-title">Scan it, type your name, press Play</h2>
+      <a class="share-url" href="https://generljacob.github.io/hash-music/" target="_blank" rel="noopener">generljacob.github.io/hash-music</a>
+      <ol class="share-steps" role="list">
+        <li><span class="n" aria-hidden="true">1</span><span>Type your name: that is your song.</span></li>
+        <li><span class="n" aria-hidden="true">2</span><span>Same name as a friend? The same song, note for note.</span></li>
+        <li><span class="n" aria-hidden="true">3</span><span>Change one letter: a completely different song.</span></li>
+      </ol>
+      <p class="share-note">Everything runs in your phone&rsquo;s browser; nothing you type is sent anywhere.</p>
+    </div>
+  </div>
+</dialog>
 <div class="tip" id="tip" hidden><b></b><span></span></div>
 
 <script>
@@ -1696,12 +1743,21 @@ function selfTest() {
   badge.dataset.result = failed.length ? 'fail' : 'pass';
 }
 
+// ============================================================================================
+// "Try it on your phone": the deck's last slide as an overlay. The header button opens it, and a
+// link to live_demo.html#qr opens the page with it already showing.
+// ============================================================================================
+const shareDialog = $('share');
+$('share-open').addEventListener('click', () => shareDialog.showModal());
+shareDialog.addEventListener('click', (e) => { if (e.target === shareDialog) shareDialog.close(); });  // the dimmed backdrop
+
 renderSong();
 renderAvalanche();
 $('inside-text').value = state.text;
 renderInside();
 renderMineTiles(0, 0, 4, false);
 setTimeout(selfTest, 0);
+if (location.hash === '#qr') shareDialog.showModal();
 </script>
 </body>
 </html>
