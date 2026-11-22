@@ -68,6 +68,10 @@ If there is time, pick one:
 - **Passwords** (1 min): in the demo page's Passwords tab, press "Run the attack". "Plain SHA-256: four
   of six passwords cracked instantly. Salted and slowed down: none."
 - **Mining** (30 s): the Mining tab with 4 zeros. "About 65,000 tries to find; one hash to check."
+- **Live Bitcoin** (1 min): the Live: Bitcoin tab. "This block was mined minutes ago, and our own SHA-256
+  just checked it: the hash starts with 19 or 20 zeros, about 5.8 × 10²³ tries of work." Press Play: every
+  block song opens with about ten low G3 notes, the leading zeros made audible. Without internet the tab
+  shows a saved snapshot, which still verifies.
 - **The band**: play `examples\jacob_band.mid`, the `--band` version.
 
 ## Audience participation (optional, 1 minute)

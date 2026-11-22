@@ -22,6 +22,13 @@ hashmusic --compare jacob jacob1       # see which of the 256 hash bits flipped
 this folder). Its **Try it on your phone** button shows a QR code to that address for an audience to
 scan; `live_demo.html#qr` opens the page with the QR code already showing.
 
+The page's **Live: Bitcoin** tab downloads the newest Bitcoin blocks and checks each one with our own
+SHA-256: a block's ID is SHA-256 applied twice to its 80-byte header, and it must fall below the target
+in that header, which is why real block IDs start with about 20 zeros. Each block also plays as a song.
+It is the only part of the page that uses the internet: it contacts blockstream.info (or mempool.space)
+only while the tab is open, sends nothing you type, and falls back to a saved snapshot of 10 blocks
+when offline.
+
 ## Build
 
 You need a C++17 compiler and CMake 3.16 or newer. Python 3 is optional; without it, three of the checks

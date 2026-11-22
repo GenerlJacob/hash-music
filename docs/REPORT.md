@@ -76,7 +76,9 @@ Four more ideas came from the course's project list. Passwords (#1) are stored a
 values), and three wrong guesses lock an account. In the demo, a table of 40 common passwords cracks
 4 of 6 plain SHA-256 users and none of the salted ones. `--verify` checks a file against a known hash
 (#5), `--mine` solves a proof-of-work puzzle (#16: five zero digits took 1.4 million tries), and `--art`
-draws a hash as a picture (#19). For contrast, `--hash toy` swaps in a deliberately bad XOR hash: one
+draws a hash as a picture (#19). The demo page's Live tab applies the same check to real Bitcoin blocks
+as they are mined: our SHA-256 confirms each block's ID and its roughly 20 leading zeros, about
+5.8 × 10²³ hashes of work. For contrast, `--hash toy` swaps in a deliberately bad XOR hash: one
 extra character flips 3 bits instead of 146, two swapped letters collide instantly, and its byte
 chi-square is about 21 million.
 

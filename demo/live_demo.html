@@ -6,7 +6,8 @@
 <title>Hash Music Live Demo</title>
 <!--
   Live demo page for the Hash Music Generator (Bubble Sort Bandits, CSC 2710).
-  Open it in any modern browser; it needs no internet connection and no build.
+  Open it in any modern browser; it needs no build, and no internet connection except for the Live tab,
+  which downloads public Bitcoin block data (and falls back to a saved snapshot when offline).
   The JavaScript below is a line-by-line port of the C++ modules in src/: sha256, mapper, band,
   midi_writer, avalanche, stats, toy_hash, password and extras. On load it checks itself against
   NIST's SHA-256 vectors, RFC 4231 (HMAC), PBKDF2 test values and the C++ build's own outputs, so the
@@ -205,6 +206,24 @@ td.mono { font-size: 14px; overflow-wrap: anywhere; }
 .vs .who { font-weight: 600; color: var(--ink-2); }
 .arts { display: flex; gap: 24px; flex-wrap: wrap; }
 
+/* Live: Bitcoin */
+.f-ver { background: var(--grid); }
+.f-prev { background: color-mix(in srgb, var(--s1) 22%, transparent); }
+.f-merkle { background: color-mix(in srgb, var(--s3) 26%, transparent); }
+.f-time { background: color-mix(in srgb, var(--s7) 24%, transparent); }
+.f-bits { background: color-mix(in srgb, var(--s5) 30%, transparent); }
+.f-nonce { background: color-mix(in srgb, var(--s2) 34%, transparent); }
+.math { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; align-items: baseline; margin-top: 14px; }
+.math .k { color: var(--ink-2); font-size: 15px; }
+.math .v { font-family: ui-monospace, Consolas, monospace; font-size: 15px; overflow-wrap: anywhere; }
+.math .v .z { background: color-mix(in srgb, var(--s3) 32%, transparent); border-radius: 2px; }
+.math .gap { grid-column: 1 / -1; height: 4px; border-top: 1px solid var(--grid); }
+.math .status { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.pill-new { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 1px 8px; border-radius: 999px;
+            background: color-mix(in srgb, var(--s3) 25%, transparent); color: var(--ink); margin-left: 6px; }
+tr.selected td { background: color-mix(in srgb, var(--s1) 10%, transparent); }
+@media (max-width: 620px) { .math { grid-template-columns: minmax(0, 1fr); gap: 2px; } .math .k { margin-top: 8px; } }
+
 /* Inside SHA-256 */
 .block { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 2px; font-family: ui-monospace, Consolas, monospace; font-size: 13px; margin-bottom: 8px; max-width: 760px; }
 .block span { text-align: center; border-radius: 3px; padding: 2px 0; }
@@ -271,6 +290,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 14px; margin-
     <button class="tab" role="tab" id="tab-pass" aria-controls="panel-pass" aria-selected="false"><span class="num">4</span>Passwords</button>
     <button class="tab" role="tab" id="tab-mine" aria-controls="panel-mine" aria-selected="false"><span class="num">5</span>Mining</button>
     <button class="tab" role="tab" id="tab-dist" aria-controls="panel-dist" aria-selected="false"><span class="num">6</span>Distribution</button>
+    <button class="tab" role="tab" id="tab-live" aria-controls="panel-live" aria-selected="false"><span class="num">7</span>Live: Bitcoin</button>
   </nav>
 
   <!-- 1. Your song -->
@@ -523,6 +543,51 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 14px; margin-
       <p class="muted" style="margin-top:8px; font-size:14px">Same random generator as <code>hashmusic --stats</code> (std::mt19937_64), so the same seed gives the same counts as the C++ tool.</p>
     </div>
     <div id="dist-out"></div>
+  </section>
+
+  <!-- 7. Live: Bitcoin -->
+  <section class="panel" id="panel-live" role="tabpanel" aria-labelledby="tab-live" hidden>
+    <div class="card">
+      <h2>Live from the Bitcoin network</h2>
+      <p class="sub">A Bitcoin block&rsquo;s ID is SHA-256 applied twice to its 80-byte header. Miners keep changing one number in that header, the nonce, until the hash starts with about 20 zero hex digits. It is the same puzzle as the Mining tab, where 4 to 6 zeros take seconds. This tab downloads the newest blocks, checks each one with our own SHA-256, and plays it as a song.</p>
+      <div class="row">
+        <button class="btn primary" id="live-refresh">Refresh</button>
+        <label class="check"><input type="checkbox" id="live-auto" checked> Check for new blocks every minute</label>
+        <label class="check"><input type="checkbox" id="live-play-new"> Play each new block when it arrives</label>
+      </div>
+      <p class="sub" id="live-status" role="status" style="margin:10px 0 0"></p>
+      <p class="muted" style="font-size:13px; margin:6px 0 0">This tab downloads public block data from blockstream.info (or mempool.space) only while you have it open. Nothing you type is sent.</p>
+    </div>
+    <div class="card" id="live-featured" hidden>
+      <div class="hash-row">
+        <div class="grow">
+          <h2 id="live-title"></h2>
+          <p class="hexline" id="live-hex" style="margin:6px 0 10px"></p>
+          <div class="row" id="live-verdict"></div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" id="live-play">&#9654; Play this block</button>
+            <span class="sub">Every block song opens with about ten low G3 notes: the leading zeros, made audible.</span>
+          </div>
+        </div>
+        <div><div class="art" id="live-art"></div><div class="art-caption">hash art</div></div>
+      </div>
+      <div class="tiles" id="live-tiles" style="margin-top:14px"></div>
+    </div>
+    <div class="card" id="live-math-card" hidden>
+      <h2>The check, step by step</h2>
+      <p class="sub">The block&rsquo;s 80-byte header, exactly as downloaded. Bitcoin stores numbers and hashes least significant byte first, so the hashes inside read backwards.</p>
+      <div class="block" id="live-header"></div>
+      <div class="legend" id="live-legend"></div>
+      <div class="math" id="live-math"></div>
+    </div>
+    <div class="card">
+      <h2>Recent blocks</h2>
+      <p class="sub">Newest first. Check one to see its proof of work step by step, or play it.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Height</th><th>Mined</th><th>Leading zeros</th><th>Transactions</th><th>Our SHA-256 check</th><th></th></tr></thead>
+        <tbody id="live-rows"><tr><td colspan="6" class="muted">Open this tab to download the newest blocks.</td></tr></tbody>
+      </table></div>
+    </div>
   </section>
 </main>
 
@@ -1082,11 +1147,12 @@ const digestOf = (bytes) => (state.hashKind === 'toy' ? toyHash(bytes) : sha256(
 const hashLabel = () => (state.hashKind === 'toy' ? 'Toy hash' : 'SHA-256');
 
 // Tabs
-const tabs = ['song', 'aval', 'inside', 'pass', 'mine', 'dist'];
+const tabs = ['song', 'aval', 'inside', 'pass', 'mine', 'dist', 'live'];
 function showTab(name) {
   for (const t of tabs) { $('tab-' + t).setAttribute('aria-selected', String(t === name)); $('panel-' + t).hidden = t !== name; }
   if (name === 'aval') renderAvalanche();
   if (name === 'inside') { $('inside-text').value = state.text; renderInside(); }
+  if (name === 'live') startLive();
 }
 tabs.forEach((t, i) => {
   $('tab-' + t).addEventListener('click', () => showTab(t));
@@ -1734,6 +1800,7 @@ function selfTest() {
     [toHex(pbkdf2(utf8('password'), utf8('salt'), 4096)), 'c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a', 'PBKDF2-SHA256, 4,096 rounds'],
     [String(mineSync('jacob', 3)), '2735', 'mining matches the C++ build'],
     [toHex(sha256(utf8(hashArtSvg(sha256(utf8('jacob')))))), 'daa1be17be8e462e3c1a20817873b5d583f7bb6b769ed54be00feea9bdad3324', 'hash art matches the C++ build'],
+    [String(checkPassed(checkBlock(BTC_SNAPSHOT[0], BTC_SNAPSHOT[0].header))), 'true', 'a saved Bitcoin block verifies'],
   ];
   const failed = checks.filter(([got, want]) => got !== want).map(([, , name]) => name);
   const badge = $('selftest');
@@ -1742,6 +1809,228 @@ function selfTest() {
   badge.title = checks.map(([got, want, name]) => `${got === want ? 'pass' : 'FAIL'}  ${name}`).join('\n');
   badge.dataset.result = failed.length ? 'fail' : 'pass';
 }
+
+// ============================================================================================
+// 7. Live: Bitcoin. A block's ID is SHA-256(SHA-256(80-byte header)) with its bytes reversed, and it
+// must be at or below the target written in the header. This tab downloads the newest blocks and
+// checks both facts with our own SHA-256.
+// ============================================================================================
+const BTC_PROVIDERS = [
+  { name: 'blockstream.info', base: 'https://blockstream.info/api' },
+  { name: 'mempool.space', base: 'https://mempool.space/api' },
+];
+// Saved from blockstream.info and checked independently with Python's hashlib, so the tab (and the
+// self-test) still work without a connection.
+const BTC_SNAPSHOT_DATE = '22 Nov 2026';
+const BTC_SNAPSHOT = [{"id":"00000000000000000000886598c890976f4cd4a493bb1c56d2021e8925525783","height":977100,"timestamp":1795379663,"tx_count":6115,"nonce":3462617852,"bits":386012787,"difficulty":134823837323272.66,"header":"0000b13f620849ec1d4ef8c6c2cc03ea7cbf900869c96589863b010000000000000000003c7d9de9314d8478cda02d8ec892489a07e7be8f72188df1c86195f2d515d01fcf51036b73160217fc5a63ce"},{"id":"000000000000000000013b868965c9690890bf7cea03ccc2c6f84e1dec490862","height":977099,"timestamp":1795379439,"tx_count":5319,"nonce":747212945,"bits":386012787,"difficulty":134823837323272.66,"header":"00804524b5cb01a6ebbc2408319619529dbae92eaa67adbe1acc010000000000000000000d1206bf17bd8cc057e2467fd8d05eca3c1ff2eb482c4e7b36e1035cd8746109ef50036b731602179190892c"},{"id":"00000000000000000001cc1abead67aa2ee9ba9d521996310824bceba601cbb5","height":977098,"timestamp":1795379002,"tx_count":6671,"nonce":130262561,"bits":386012787,"difficulty":134823837323272.66,"header":"00c0d628c40545e2cc84f58ae2d87936c7c12668553eb2348abd0100000000000000000061d1f321d8375da0843eb4751c3e7737fa17d7c81037501587c823902aa95b793a4f036b7316021721a6c307"},{"id":"00000000000000000001bd8a34b23e556826c1c73679d8e28af584cce24505c4","height":977097,"timestamp":1795378854,"tx_count":6897,"nonce":3462782729,"bits":386012787,"difficulty":134823837323272.66,"header":"0060a62147bc5b76e435ea7da6e1bdd8aef4ea8677e3f06ee66300000000000000000000c12b069981dfc665e65bf77a7bbe0f4cd901fbb426aa79d7667fea05deffdc5aa64e036b7316021709df65ce"},{"id":"0000000000000000000063e66ef0e37786eaf4aed8bde1a67dea35e4765bbc47","height":977096,"timestamp":1795378570,"tx_count":7985,"nonce":2906094254,"bits":386012787,"difficulty":134823837323272.66,"header":"00c0872167ac209c4890bc93848582bf55b7573f18e27d9eed8300000000000000000000cd6cfee18c151bdd16f473506d8cf507fba4f3a94965cfb53372d49e065dc2728a4d036b73160217ae7a37ad"},{"id":"0000000000000000000083ed9e7de2183f57b755bf82858493bc90489c20ac67","height":977095,"timestamp":1795378433,"tx_count":5296,"nonce":1943600306,"bits":386012787,"difficulty":134823837323272.66,"header":"0020be202913880293fb253ff6c2de479b892bc18e237d18ee1200000000000000000000d639186586cf8ba164303b14c0235d071cb32ed90da119f8301754a83477683e014d036b73160217b2fcd873"},{"id":"0000000000000000000012ee187d238ec12b899b47dec2f63f25fb9302881329","height":977094,"timestamp":1795377927,"tx_count":7845,"nonce":513720402,"bits":386012787,"difficulty":134823837323272.66,"header":"00000e2051566c4dffb68975feecdcc4899342f3050a86495b40000000000000000000007d4320650e698cf6d5f571a8a5ba95d296f8b6a3d700fc7325a0dd583c5e9f83074b036b7316021752c09e1e"},{"id":"00000000000000000000405b49860a05f3429389c4dcecfe7589b6ff4d6c5651","height":977093,"timestamp":1795377873,"tx_count":5391,"nonce":2411066737,"bits":386012787,"difficulty":134823837323272.66,"header":"0080c121a6f5954385f8110f6c4ba2e84d67efa9b443184583c2000000000000000000005024299c9d4e43a95d2bef2a2c33e97bd5fc06d3dcadd933553e22e0c4c0851cd14a036b7316021771f5b58f"},{"id":"00000000000000000000c283451843b4a9ef674de8a24b6c0f11f8854395f5a6","height":977092,"timestamp":1795377679,"tx_count":2882,"nonce":841897468,"bits":386012787,"difficulty":134823837323272.66,"header":"00a04a341315904008b42ab218705a5c56853b0488d6f11c722a000000000000000000000435d65c8c7fb4fa72f41ddc5cb67633a1d88032a24edd2b513e368bf8b95afb0f4a036b73160217fc552e32"},{"id":"000000000000000000002a721cf1d688043b85565c5a7018b22ab40840901513","height":977091,"timestamp":1795376691,"tx_count":3367,"nonce":324993803,"bits":386012787,"difficulty":134823837323272.66,"header":"0020c03cf6f370745dd0ee129c098ab7e49c1427e09070a71bc10000000000000000000055a8a78a5e33461a821866a9bb9a2f6c0c6b973ac2d3c72c59490e87e174e1c83346036b731602170b035f13"}];
+
+const live = { started: false, loading: false, provider: null, snapshot: false, blocks: [], headers: new Map(), checks: new Map(),
+               selected: null, newIds: new Set(), updated: null, rate: undefined };
+const hexToBytes = (hex) => Uint8Array.from(hex.match(/../g) || [], (h) => parseInt(h, 16));
+const isHex = (s, length) => typeof s === 'string' && s.length === length && /^[0-9a-f]+$/.test(s);
+const leadingZeroDigits = (hex) => hex.length - hex.replace(/^0+/, '').length;
+const SUPERSCRIPT = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '-': '⁻' };
+function scientific(x) { const [m, e] = x.toExponential(1).split('e'); return `${m} × 10${String(Number(e)).replace(/./g, (c) => SUPERSCRIPT[c])}`; }
+function duration(seconds) {
+  const years = seconds / 31557600;
+  if (years >= 1e9) return `${(years / 1e9).toFixed(1)} billion years`;
+  if (years >= 1e6) return `${(years / 1e6).toFixed(1)} million years`;
+  if (years >= 1) return `${commas(years)} years`;
+  return seconds >= 3600 ? `${commas(seconds / 3600)} hours` : `${commas(seconds)} seconds`;
+}
+function ago(timestamp) {
+  const seconds = Math.max(0, Date.now() / 1000 - timestamp), minutes = Math.floor(seconds / 60), hours = Math.floor(minutes / 60);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  if (hours < 48) return `${hours} h ${minutes % 60} min ago`;
+  return `${Math.floor(hours / 24)} days ago`;
+}
+const clockTime = (date) => date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+// Data from the network is untrusted: keep only well-formed fields, and show them with textContent.
+function cleanBlock(b) {
+  if (!b || typeof b !== 'object' || !isHex(b.id, 64) || !Number.isInteger(b.height) || !Number.isFinite(b.timestamp) ||
+      !Number.isInteger(b.tx_count) || !Number.isFinite(b.difficulty) || !Number.isInteger(b.bits) || !Number.isInteger(b.nonce)) return null;
+  return { id: b.id, height: b.height, timestamp: b.timestamp, tx_count: b.tx_count, difficulty: b.difficulty, bits: b.bits, nonce: b.nonce };
+}
+async function fetchText(url, ms = 8000) {
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.text();
+  } finally { clearTimeout(timer); }
+}
+
+// The proof-of-work check, with our SHA-256.
+function checkBlock(block, headerHex) {
+  if (!isHex(headerHex, 160)) return null;
+  const header = hexToBytes(headerHex);
+  const le32 = (at) => (header[at] | (header[at + 1] << 8) | (header[at + 2] << 16) | (header[at + 3] << 24)) >>> 0;
+  const first = sha256(header), second = sha256(first), id = toHex(second.slice().reverse());
+  const bits = le32(72), nonce = le32(76), exponent = bits >>> 24, mantissa = BigInt(bits & 0xffffff);
+  const target = exponent >= 3 ? mantissa << BigInt(8 * (exponent - 3)) : mantissa >> BigInt(8 * (3 - exponent));
+  return {
+    header, first, second, id, bits, nonce, target, version: le32(0), time: le32(68),
+    prev: toHex(header.slice(4, 36).reverse()), merkle: toHex(header.slice(36, 68).reverse()),
+    idMatches: id === block.id, meetsTarget: BigInt('0x' + id) <= target, fieldsMatch: bits === block.bits && nonce === block.nonce,
+  };
+}
+const checkPassed = (c) => !!c && c.idMatches && c.meetsTarget && c.fieldsMatch;
+function blockCheck(block) {
+  if (!live.checks.has(block.id) && live.headers.has(block.id)) live.checks.set(block.id, checkBlock(block, live.headers.get(block.id)));
+  return live.checks.get(block.id) || null;
+}
+// How many block headers this browser can hash per second (each one is two SHA-256 runs).
+function measureRate() {
+  const header = new Uint8Array(80), start = performance.now();
+  let count = 0;
+  for (let round = 0; round < 400 && performance.now() - start < 150; round++) {
+    for (let i = 0; i < 250; i++) { header[76] = i; header[77] = round & 255; sha256(sha256(header)); count++; }
+  }
+  const seconds = (performance.now() - start) / 1000;
+  return seconds > 0.001 ? count / seconds : null;
+}
+
+const setLiveStatus = (text) => { $('live-status').textContent = text; };
+async function loadLive(poll) {
+  if (live.loading) return;
+  live.loading = true;
+  $('live-refresh').disabled = true;
+  if (!poll) setLiveStatus('Downloading the newest blocks…');
+  const order = live.provider ? [live.provider, ...BTC_PROVIDERS.filter((p) => p !== live.provider)] : BTC_PROVIDERS;
+  let fresh = null, provider = null;
+  for (const p of order) {
+    try {
+      if (poll && !live.snapshot && live.blocks.length) {  // cheap check first: has a new block arrived?
+        const tip = (await fetchText(p.base + '/blocks/tip/hash')).trim();
+        if (tip === live.blocks[0].id) { fresh = live.blocks; provider = p; break; }
+      }
+      const list = JSON.parse(await fetchText(p.base + '/blocks'));
+      const blocks = Array.isArray(list) ? list.map(cleanBlock).filter(Boolean) : [];
+      if (!blocks.length) throw new Error('no blocks in the reply');
+      fresh = blocks; provider = p; break;
+    } catch (error) { /* try the next service */ }
+  }
+  if (!fresh) {
+    if (!live.blocks.length || live.snapshot) useSnapshot();
+    else setLiveStatus(`No block service answered just now; showing the blocks downloaded at ${clockTime(live.updated)}.`);
+    live.loading = false; $('live-refresh').disabled = false;
+    return;
+  }
+  await Promise.all(fresh.filter((b) => !live.headers.has(b.id)).map(async (b) => {
+    try {
+      const header = (await fetchText(`${provider.base}/block/${b.id}/header`)).trim().toLowerCase();
+      if (isHex(header, 160)) live.headers.set(b.id, header);
+    } catch (error) { /* that block shows "header not downloaded" */ }
+  }));
+  const arrived = [];
+  if (fresh !== live.blocks && live.blocks.length && !live.snapshot) {
+    for (const b of fresh) { if (b.id === live.blocks[0].id) break; arrived.push(b); }
+  }
+  arrived.forEach((b) => live.newIds.add(b.id));
+  const followNewest = !live.selected || live.snapshot || (live.blocks.length && live.selected === live.blocks[0].id);
+  live.blocks = fresh; live.provider = provider; live.snapshot = false; live.updated = new Date();
+  if (followNewest) live.selected = fresh[0].id;
+  setLiveStatus(`Live from ${provider.name}, checked at ${clockTime(live.updated)}.` +
+    (arrived.length ? ` ${arrived.length} new block${arrived.length > 1 ? 's' : ''} just arrived.` : ''));
+  renderLive();
+  if (arrived.length && $('live-play-new').checked) playBlock(fresh[0]);
+  live.loading = false; $('live-refresh').disabled = false;
+}
+function useSnapshot() {
+  live.blocks = BTC_SNAPSHOT.map(cleanBlock).filter(Boolean);
+  for (const b of BTC_SNAPSHOT) live.headers.set(b.id, b.header);
+  live.snapshot = true; live.provider = null; live.selected = live.blocks[0].id;
+  const heights = live.blocks.map((b) => b.height);
+  setLiveStatus(`Offline: no block service answered, so this is a saved snapshot of blocks ${commas(Math.min(...heights))}–${commas(Math.max(...heights))} from ${BTC_SNAPSHOT_DATE}. Press Refresh to try again.`);
+  renderLive();
+}
+const playBlock = (block) => playSongs([makeSong(hexToBytes(block.id), false).song]);
+
+function renderLive() {
+  const rows = $('live-rows'); rows.replaceChildren();
+  for (const b of live.blocks) {
+    const c = blockCheck(b);
+    const show = el('button', { class: 'btn small', text: 'Check' });
+    const play = el('button', { class: 'btn small', text: '▶ Play' });
+    show.addEventListener('click', () => { live.selected = b.id; renderLive(); $('live-featured').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    play.addEventListener('click', () => playBlock(b));
+    const height = el('td', { text: commas(b.height) });
+    if (live.newIds.has(b.id)) height.append(el('span', { class: 'pill-new', text: 'NEW' }));
+    rows.append(el('tr', { class: b.id === live.selected ? 'selected' : '' }, height, el('td', { text: ago(b.timestamp) }),
+      el('td', { text: `${leadingZeroDigits(b.id)} of 64` }), el('td', { text: commas(b.tx_count) }),
+      el('td', {}, c ? statusChip(checkPassed(c), checkPassed(c) ? 'verified' : 'does not verify') : el('span', { class: 'sub', text: 'header not downloaded' })),
+      el('td', {}, el('div', { class: 'row', style: 'gap:6px; flex-wrap:nowrap' }, show, play))));
+  }
+  renderFeatured();
+}
+function renderFeatured() {
+  const b = live.blocks.find((x) => x.id === live.selected);
+  $('live-featured').hidden = !b; $('live-math-card').hidden = !b;
+  if (!b) return;
+  const c = blockCheck(b), zeros = leadingZeroDigits(b.id), work = b.difficulty * 4294967296;
+  $('live-title').textContent = `Block ${commas(b.height)} · mined ${ago(b.timestamp)}`;
+  $('live-hex').replaceChildren(el('span', { class: 'z', text: b.id.slice(0, zeros) }), document.createTextNode(b.id.slice(zeros)));
+  $('live-verdict').replaceChildren(!c ? el('span', { class: 'sub', text: 'Its header could not be downloaded, so this block cannot be checked.' })
+    : checkPassed(c) ? statusChip(true, 'Verified with our SHA-256: the hash is the block ID, and it beats the target')
+    : statusChip(false, 'Does not verify: the downloaded header does not hash to this block ID'));
+  showArt($('live-art'), hexToBytes(b.id));
+  if (live.rate === undefined) live.rate = measureRate();
+  const years = live.rate ? work / live.rate / 31557600 : 0;
+  $('live-tiles').replaceChildren(
+    tile('Leading zeros', `${zeros} of 64`, 'hex digits; the Mining tab reaches 4 to 6'),
+    tile('Work to find it', `≈ ${scientific(work)}`, 'hashes on average (difficulty × 2³²); the whole network takes about 10 minutes'),
+    tile('At this page’s speed', live.rate ? duration(work / live.rate) : '—',
+      live.rate ? `${commas(live.rate)} headers per second in this browser${years >= 1e9 ? '; the universe is 13.8 billion years old' : ''}` : 'speed not measured'),
+    tile('Transactions', commas(b.tx_count), 'all summed up by the Merkle root in the header'));
+  renderBlockMath(c);
+}
+function renderBlockMath(c) {
+  const grid = $('live-header'), legend = $('live-legend'), math = $('live-math');
+  grid.replaceChildren(); legend.replaceChildren(); math.replaceChildren();
+  if (!c) { math.append(el('p', { class: 'sub', text: 'The header for this block could not be downloaded.' })); return; }
+  const fields = [['f-ver', 0, 4, 'version'], ['f-prev', 4, 36, 'previous block'], ['f-merkle', 36, 68, 'Merkle root'],
+                  ['f-time', 68, 72, 'time'], ['f-bits', 72, 76, 'target, compact'], ['f-nonce', 76, 80, 'nonce']];
+  c.header.forEach((byte, i) => {
+    const field = fields.find(([, start, end]) => i >= start && i < end);
+    grid.append(el('span', { class: field[0], title: field[3], text: hex2(byte) }));
+  });
+  legend.append(...fields.map(([cls, start, end, name]) => el('span', {}, el('i', { class: cls }), document.createTextNode(`${name} (${end - start} bytes)`))));
+  const row = (label, value) => {
+    math.append(el('div', { class: 'k', text: label }));
+    const cell = el('div', { class: 'v' });
+    if (typeof value === 'string') cell.textContent = value; else cell.append(value);
+    math.append(cell);
+  };
+  const zeroHex = (hex) => { const z = leadingZeroDigits(hex); return el('span', {}, el('span', { class: 'z', text: hex.slice(0, z) }), document.createTextNode(hex.slice(z))); };
+  row('Version', `0x${c.version.toString(16).padStart(8, '0')}`);
+  row('Previous block', c.prev);
+  row('Merkle root', c.merkle);
+  row('Time', `${c.time} (${new Date(c.time * 1000).toLocaleString()})`);
+  row('Target, compact', `0x${c.bits.toString(16)}`);
+  row('Nonce', `${commas(c.nonce)}: the number the miner kept changing`);
+  math.append(el('div', { class: 'gap' }));
+  row('1. SHA-256(header)', toHex(c.first));
+  row('2. SHA-256(step 1)', toHex(c.second));
+  row('3. Bytes reversed', zeroHex(c.id));
+  row('Target', zeroHex(c.target.toString(16).padStart(64, '0')));
+  row('4. Result', el('span', { class: 'row', style: 'gap:8px' },
+    statusChip(c.idMatches, c.idMatches ? 'step 3 is the block ID' : 'step 3 is not the block ID'),
+    statusChip(c.meetsTarget, c.meetsTarget ? 'and it is below the target: valid proof of work' : 'above the target: invalid')));
+}
+function startLive() {
+  if (live.started) return;
+  live.started = true;
+  loadLive(false);
+  setInterval(() => {  // once a minute while this tab is on screen: look for a new block, refresh the ages
+    if ($('panel-live').hidden || document.visibilityState !== 'visible') return;
+    if ($('live-auto').checked) loadLive(true); else renderLive();
+  }, 60000);
+}
+$('live-refresh').addEventListener('click', () => loadLive(false));
+$('live-play').addEventListener('click', () => { const b = live.blocks.find((x) => x.id === live.selected); if (b) playBlock(b); });
+$('live-play-new').addEventListener('change', (e) => { if (e.target.checked) ensureAudio(); });  // unlock audio with this click
 
 // ============================================================================================
 // "Try it on your phone": the deck's last slide as an overlay. The header button opens it, and a
